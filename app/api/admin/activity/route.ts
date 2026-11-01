@@ -1,0 +1,2 @@
+import {env} from 'cloudflare:workers';import {requireAccess,json,failure} from '../../../../lib/access';
+export async function GET(){try{await requireAccess('audit.read');const r=await env.DB!.prepare('SELECT * FROM activity ORDER BY created_at DESC LIMIT 200').all();return json({activity:r.results});}catch(e){return failure(e);}}

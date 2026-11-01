@@ -1,0 +1,3 @@
+import AdminPanel from './panel';import {identity} from '../../lib/access';import {redirect} from 'next/navigation';
+export const dynamic='force-dynamic';
+export default async function AdminPage(){const u=await identity();if(!u)redirect('/sign-in?redirect_url=/admin');if(!u.role)return <div className="access-denied"><span className="wordmark">AUREL</span><h1>This space is for your hotel team.</h1><p>Your account does not have staff access. Ask the owner to assign a role to your sign-in email.</p><a href="/" className="primary">Return to the hotel website</a></div>;return <AdminPanel user={{name:u.fullName||u.email,email:u.email,role:u.role}}/>;}

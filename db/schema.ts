@@ -1,0 +1,11 @@
+import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
+export const reservations = sqliteTable('reservations', {
+ version:integer('version').notNull().default(0),id:text('id').primaryKey(),owner:text('owner').notNull(),guest:text('guest').notNull(),email:text('email').notNull(),phone:text('phone').notNull().default(''),
+ room:text('room').notNull(),checkIn:text('check_in').notNull(),checkOut:text('check_out').notNull(),guests:integer('guests').notNull(),
+ status:text('status').notNull().default('confirmed'),total:integer('total').notNull(),notes:text('notes').notNull().default(''),createdAt:text('created_at').notNull()
+},t=>[index('owner_room_dates').on(t.owner,t.room,t.checkIn,t.checkOut)]);
+export const staffAccess=sqliteTable('staff_access',{email:text('email').primaryKey(),name:text('name').notNull(),role:text('role').notNull(),active:integer('active').notNull().default(1),updatedAt:text('updated_at').notNull()});
+export const roomState=sqliteTable('room_state',{room:text('room').primaryKey(),cleaning:text('cleaning').notNull().default('clean'),operational:text('operational').notNull().default('open'),rate:integer('rate'),assignedTo:text('assigned_to').notNull().default(''),notes:text('notes').notNull().default(''),updatedAt:text('updated_at').notNull()});
+export const tasks=sqliteTable('hotel_tasks',{id:text('id').primaryKey(),title:text('title').notNull(),room:text('room').notNull(),kind:text('kind').notNull(),priority:text('priority').notNull(),status:text('status').notNull(),assignedTo:text('assigned_to').notNull().default(''),notes:text('notes').notNull().default(''),createdAt:text('created_at').notNull()});
+export const payments=sqliteTable('payments',{id:text('id').primaryKey(),bookingId:text('booking_id').notNull(),amount:integer('amount').notNull(),method:text('method').notNull(),reference:text('reference').notNull().default(''),actor:text('actor').notNull(),createdAt:text('created_at').notNull()});
+export const activity=sqliteTable('activity',{id:text('id').primaryKey(),actor:text('actor').notNull(),action:text('action').notNull(),entity:text('entity').notNull(),detail:text('detail').notNull().default(''),createdAt:text('created_at').notNull()});

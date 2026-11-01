@@ -1,0 +1,4 @@
+import {env} from 'cloudflare:workers';
+import {rooms} from './hotel';
+export type RoomState={room:string;cleaning:string;operational:string;rate:number|null;assignedTo:string;notes:string;updatedAt:string};
+export async function getRooms(){const rows=await env.DB!.prepare('SELECT room,cleaning,operational,rate,assigned_to AS assignedTo,notes,updated_at AS updatedAt FROM room_state').all<RoomState>();return rooms.map(r=>{const s=rows.results.find(s=>s.room===r.id);return {...r,image:'/images/'+(r.type==='Classic'?'classic':r.type==='Deluxe'?'deluxe':'suite')+'.jpg',cleaning:s?.cleaning||'clean',operational:s?.operational||'open',rate:s?.rate??r.rate,assignedTo:s?.assignedTo||'',notes:s?.notes||'',updatedAt:s?.updatedAt||''};});}

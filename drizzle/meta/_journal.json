@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1793511242320,
+      "tag": "0000_faulty_talkback",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1793511262354,
+      "tag": "0001_room_conflicts",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793525757702,
+      "tag": "0002_blushing_kronos",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793525765060,
+      "tag": "0003_shared_hotel_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1793526813763,
+      "tag": "0004_payment_integrity",
+      "breakpoints": true
+    }
+  ]
+}

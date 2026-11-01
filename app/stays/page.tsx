@@ -1,0 +1,10 @@
+import PublicSite from '../public-site';
+import {identity} from '../../lib/access';
+import {redirect} from 'next/navigation';
+export const dynamic='force-dynamic';
+export default async function Page({searchParams}:{searchParams:Promise<{start?:string;end?:string}>}){
+ const u=await identity();if(!u)redirect('/sign-in?redirect_url=/stays');
+ const q=await searchParams;
+ const valid=(s?:string)=>!!s&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&Number.isFinite(Date.parse(s));
+ return <PublicSite page="stays" user={u?{name:u.fullName||u.email,email:u.email,role:u.role}:null} dates={valid(q.start)&&valid(q.end)?{start:q.start!,end:q.end!}:undefined}/>;
+}

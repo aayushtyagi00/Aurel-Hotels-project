@@ -1,0 +1,2 @@
+import {identity,json,failure} from '../../../lib/access';
+export async function GET(){try{const u=await identity();return json({user:u?{name:u.fullName||u.email,email:u.email,role:u.role}:null});}catch(e){return failure(e);}}
