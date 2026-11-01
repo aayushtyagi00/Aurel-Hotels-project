@@ -1,0 +1,1 @@
+import PublicSite from '../public-site';export default function Page(){return <PublicSite page="amenities" user={null}/>;}

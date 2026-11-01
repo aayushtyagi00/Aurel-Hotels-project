@@ -1,35 +1,35 @@
 # AUREL hotel application
 
-Public site: https://aurel-hotels.web.app . Source: https://github.com/aayushtyagi00/Aurel-Hotels-project . API: https://aurel-hotel-reservations-tyagi.tyagiaayush3030.chatgpt.site .
+Live site: https://aurel-hotels.web.app
+Source: https://github.com/aayushtyagi00/Aurel-Hotels-project
 
 ## Architecture
-Firebase Hosting serves a static React frontend on the free plan. The existing external Worker runs the API, validates Clerk sessions, and accesses Firestore. No Firebase App Hosting, Cloud Run, paid Firebase runtime, or Blaze plan is required for this split. Provider free-tier quotas still apply.
+Firebase Hosting serves the React frontend. An external Worker verifies Firebase ID tokens and accesses Firestore. This split works without Firebase App Hosting, Cloud Run or a Blaze plan; provider free-tier quotas still apply.
 
-The public site has Home, Rooms, About, FAQ and personal My Stays pages. The expanded homepage includes room collections, amenities, getaway ideas, booking steps and FAQs. A circular profile menu contains account actions and the role-dependent Admin panel link.
+Home, Rooms, Amenities, Offers and About Us have separate URLs. About Us includes FAQs; `/faq` redirects there. The circular profile menu contains My Stays, account management, sign-out and the staff-only Admin panel link. Public content renders before authentication loads. Navigation preserves the running app, authentication and administration are separate lazy chunks, and displayed photographs use optimized WebP files.
 
-## Identity and roles
-Clerk handles email/password, Google, Apple and Facebook sign-in. Social options are enabled in the development instance; completed provider sign-ins and cross-origin signed-in flows still need end-to-end verification. Production Apple and Facebook need the owner's developer credentials. This is a development preview until Clerk production setup is complete.
+## Authentication and access
+Firebase Authentication supports Google and email/password only. Email/password accounts must verify their email before using hotel services. Reset-password and email-verification flows are included. Browser configuration in `firebase-client/firebase-config.json` is public SDK configuration, not a server credential.
 
-Only a verified primary Clerk email can receive hotel privileges. Set the owner email privately as `HOTEL_OWNER_EMAIL`; no owner contact address is stored in source. The owner grants/revokes staff roles by email: manager, receptionist, housekeeping, maintenance or viewer. API permissions are checked on each request and rechecked within Firestore mutations. No staff invitation email is sent.
+The API validates the token's Google signature, issuer, project audience, expiry, verified email and allowed sign-in provider. Set `HOTEL_OWNER_EMAIL` privately in the backend environment. Staff roles are granted/revoked by verified email: manager, receptionist, housekeeping, maintenance or viewer. Every API operation checks its permissions, including checks inside Firestore mutations. No staff invitation email is sent.
 
-## Firestore
-Project `aurel-hotels`, database `aurel-hotel`, Enterprise native edition, Mumbai `asia-south1`. Direct client database access is denied. Backend identity: `aurel-hotel-backend@aurel-hotels.iam.gserviceaccount.com` with `roles/datastore.user`. Its credential is held in the backend secret store, never in GitHub or browser code. Creation/delivery was explicitly approved; no local key file was created.
+Existing users sign in again with Google or create a Firebase email/password account. Passwords from the previous authentication system are not imported. Older reservations can be accessed only when their stored email matches the new account's verified email; existing reservation ownership IDs are preserved.
 
-Collections: reservations, staff_access, room_state, hotel_tasks, payments and activity. Each record is a separate document. A shared revision document serializes hotel writes in native transactions, preserving booking overlaps, optimistic versions, payment/refund bounds and room-readiness checks. This simple implementation scans server-side collections for a small, single-property hotel. Larger inventories need targeted queries and per-room/per-booking locking.
+## Data and operations
+Firestore project `aurel-hotels`, database `aurel-hotel`, Mumbai `asia-south1`. Direct browser database access is denied. A dedicated backend service account has `roles/datastore.user`; its credential is held only in the backend secret store. Never place it in browser code, local source or GitHub.
 
-`FIRESTORE_ENABLED=true` selects Firestore. D1 routes remain as a rollback option; no D1 records are deleted. `HOTEL_READ_ONLY=true` briefly pauses updates during migration. Final activation is performed only after the current D1 snapshot is copied and verified.
+Collections: reservations, staff_access, room_state, hotel_tasks, payments and activity. Native transactions serialize hotel writes using a shared revision document and preserve booking overlap, optimistic version, payment/refund and room-readiness checks. Public availability reads only reservations and room state. This design targets a small, single-property hotel; larger inventories need indexed queries and finer-grained locking.
 
-## Operations and limits
-Bookings, calendar, guests, room rates/status, cleaning and maintenance tasks, offline payment/refund ledger, occupancy reports/CSV and activity history. Checkout marks rooms dirty; check-in requires a clean/open room. Twelve rooms are configured in `lib/hotel.ts`.
+Operations include bookings, calendar, guests, room rates/status, cleaning and maintenance tasks, an offline payment/refund ledger, occupancy reports/CSV and activity history. Checkout marks rooms dirty; check-in requires a clean/open room. Twelve rooms are configured in `lib/hotel.ts`. Payments record transactions handled elsewhere; the app does not charge cards. Photos are representative licensed stock, credited at `/photo-credits`.
 
-Payments are records of transactions handled elsewhere; the app does not charge cards. No travel-agency or email-delivery integrations are configured. Photos are licensed representative stock, credited at `/photo-credits`.
+`FIRESTORE_ENABLED=true` selects Firestore; `HOTEL_READ_ONLY=true` pauses mutations. The original two D1 records were copied and verified before activation. D1 remains intact for rollback.
 
-## Development and deployment
-Node 22.13+. `npm install`, `npx tsc --noEmit`. Clerk CLI configures ignored local credentials. `npm run dev` builds the Worker, pulls local Clerk configuration and starts its compiled preview. Local storage defaults to D1 unless Firestore server secrets and the feature flag are configured. Do not put private keys in command-line arguments or source.
+## Local development
+Use Node 22.13+ and `npm install`. `npm run dev` starts the frontend on localhost. Its development-only API proxy targets the deployed hotel API by default and sends real Firebase tokens unchanged. Use `DEV_API_TARGET` to target an isolated local API instead. `npm run dev:api` builds and previews the Worker; local storage defaults to D1 unless the Firestore environment is configured. Keep secrets in ignored local environment files or the deployment secret store.
 
-`node scripts/build-firebase.mjs` creates ignored `dist-firebase/` using only the Clerk publishable key and public API URL. `FIREBASE_BACKEND_URL` can override the API endpoint. Deploy only Firebase Hosting with the authenticated Firebase CLI. The Worker is packaged/published through its existing Sites workflow. Backend CORS permits only the two exact Firebase project domains.
+Run `npx tsc --noEmit` and `npm run build:frontend`. `scripts/test-api.mjs` checks local anonymous route protection. `scripts/test-firestore.cjs` tests transactions and permissions using uniquely named data with bounded cleanup; it requires authorized Firestore access. No test authentication bypass is deployed.
 
-Twelve Clerk route-protection checks are in `scripts/test-api.mjs` (localhost only). The 32-check real-Firestore transaction suite is in `scripts/test-firestore.cjs`; it uses an in-memory test identity fixture, hidden credential input, uniquely named test data, and bounded cleanup. No authentication bypass is included in the deployed app. TypeScript, both builds, live public availability and rejected anonymous admin access were checked. Completed OAuth sign-ins remain unverified.
+## Deployment
+`npm run build:frontend` creates `dist-firebase/`. `FIREBASE_BACKEND_URL` can override the API URL. Deploy with `firebase deploy --only hosting --project aurel-hotels`. The checkout-local Firebase CLI under `.sites-runtime/firebase-cli` is a fallback if the global/npx cache is damaged.
 
-## Activation completed
-Firestore was activated after a read-only migration window. The final D1 snapshot contained two records; both were imported and verified. D1 remains intact for rollback, but the released backend now uses Firestore (`FIRESTORE_ENABLED=true`) and writes are open (`HOTEL_READ_ONLY=false`). The real-Firestore suite passed all 32 checks and cleaned up its isolated records. Public inventory, anonymous session/admin protection and allowed/denied CORS origins were checked on the deployed backend. A service-account credential was created only after explicit approval and delivered directly to the backend secret store in memory; it was not saved to a local file or repository.
+Publish the Worker through the existing Sites source/version workflow. Preserve its Firestore credential and private owner setting. Backend CORS permits the exact Firebase project domains. Authentication providers are configured in Firebase, with the Hosting domains authorized. The tracked Firebase configuration declares email/password; Google is enabled separately using the project's support email, which is kept out of source.

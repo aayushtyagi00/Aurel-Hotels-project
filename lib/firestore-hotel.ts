@@ -13,6 +13,7 @@ export function firestoreEnabled(){return(env as typeof env & {FIRESTORE_ENABLED
 export const recordKey=(collection:Collection,row:RecordData)=>String(collection==='staff_access'?row.email:collection==='room_state'?row.room:row.id);
 export const documentPath=(collection:Collection,row:RecordData)=>collection+'/'+encodeURIComponent(recordKey(collection,row));
 export async function readHotel(transaction?:string):Promise<HotelData>{const rows=await Promise.all(collections.map(c=>queryDocuments(c,{},transaction)));return Object.fromEntries(collections.map((c,i)=>[c,rows[i].map(r=>r.data)])) as HotelData;}
+export async function readInventory():Promise<HotelData>{const [reservations,states]=await Promise.all([queryDocuments('reservations'),queryDocuments('room_state')]);return{reservations:reservations.map(r=>r.data),room_state:states.map(r=>r.data),staff_access:[],hotel_tasks:[],payments:[],activity:[]};}
 export async function mutateHotel<T>(change:(data:HotelData)=>T|Promise<T>):Promise<T>{
  return runTransaction(async transaction=>{
   const revision=await getDocument('_system/hotel_revision',transaction);
@@ -23,5 +24,5 @@ export async function mutateHotel<T>(change:(data:HotelData)=>T|Promise<T>):Prom
   return{result,writes};
  });
 }
-export function hotelRooms(data:HotelData){return inventory.map(r=>{const s=data.room_state.find(s=>s.room===r.id);return{...r,rate:Number(s?.rate??r.rate),cleaning:String(s?.cleaning||'clean'),operational:String(s?.operational||'open'),assignedTo:String(s?.assignedTo||''),notes:String(s?.notes||''),updatedAt:String(s?.updatedAt||''),image:'/images/'+(r.type==='Classic'?'classic':r.type==='Deluxe'?'deluxe':'suite')+'.jpg'};});}
+export function hotelRooms(data:HotelData){return inventory.map(r=>{const s=data.room_state.find(s=>s.room===r.id);return{...r,rate:Number(s?.rate??r.rate),cleaning:String(s?.cleaning||'clean'),operational:String(s?.operational||'open'),assignedTo:String(s?.assignedTo||''),notes:String(s?.notes||''),updatedAt:String(s?.updatedAt||''),image:'/images/'+(r.type==='Classic'?'classic':r.type==='Deluxe'?'deluxe':'suite')+'.webp'};});}
 export function recordActivity(data:HotelData,actor:string,action:string,entity:string,detail=''){data.activity.push({id:crypto.randomUUID(),actor,action,entity,detail,created_at:new Date().toISOString()});}

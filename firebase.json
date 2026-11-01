@@ -30,6 +30,24 @@
           }
         ]
       }
+    ],
+    "redirects": [
+      {
+        "source": "/faq",
+        "destination": "/about",
+        "type": 301
+      }
     ]
+  },
+  "auth": {
+    "authorizedDomains": [
+      "aurel-hotels.web.app",
+      "aurel-hotels.firebaseapp.com",
+      "localhost",
+      "127.0.0.1"
+    ],
+    "providers": {
+      "emailPassword": true
+    }
   }
 }

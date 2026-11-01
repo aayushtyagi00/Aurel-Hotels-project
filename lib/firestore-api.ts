@@ -2,7 +2,7 @@ import {z} from 'zod';
 import {requireAccess,json,failure,readBody,HttpError,OWNER_EMAIL} from './access';
 import {can,roles,type Permission,type Role} from './permissions';
 import {today,nights} from './hotel';
-import {readHotel,mutateHotel,hotelRooms,recordActivity,type HotelData} from './firestore-hotel';
+import {readHotel,readInventory,mutateHotel,hotelRooms,recordActivity,type HotelData} from './firestore-hotel';
 // Schemas validate all browser input; this internal row type spans six existing
 // domain collections imported from D1, whose optional fields differ by entity.
 type Row=Record<string,any>;
@@ -15,6 +15,7 @@ const taskSchema=z.object({id:z.string().optional(),title:z.string().trim().min(
 const paymentSchema=z.object({kind:z.enum(['payment','refund']).default('payment'),bookingId:z.string(),amount:z.number().int().min(1).max(6000000),method:z.enum(['cash','card','bank-transfer','upi']),reference:z.string().max(120),id:z.string().uuid()}).strict();
 function fail(status:number,message:string):never{throw new HttpError(status,message);}
 const publicBooking=({owner,...r}:Row)=>r;
+function ownedBy(r:Row,user:{userId:string;email:string}){return r.owner===user.userId||(typeof r.owner==='string'&&r.owner.startsWith('user_')&&String(r.email).toLowerCase()===user.email);}
 const net=(s:State,id:string)=>s.payments.filter(p=>p.bookingId===id).reduce((n,p)=>n+Number(p.amount),0);
 const live=(r:Row)=>['confirmed','checked-in'].includes(r.status);
 const sorted=(rows:Row[],field='createdAt')=>[...rows].sort((a,b)=>String(b[field]||'').localeCompare(String(a[field]||'')));
@@ -25,13 +26,13 @@ export async function firestoreApi(req:Request,resource:string){try{
  const url=new URL(req.url),method=req.method;
  if(resource==='rooms'&&method==='GET'){
   const start=url.searchParams.get('start')||today(),end=url.searchParams.get('end')||'';date.parse(start);date.parse(end);if(nights(start,end)<1||nights(start,end)>30)fail(400,'Select a stay of 1 to 30 nights.');
-  const d=await readHotel(),s=d as State;return json({rooms:hotelRooms(d).map(({cleaning,assignedTo,notes,updatedAt,operational,...r})=>({...r,available:operational==='open'&&!s.reservations.some(b=>b.room===r.id&&live(b)&&b.checkIn<end&&b.checkOut>start)}))});
+  const d=await readInventory(),s=d as State;return json({rooms:hotelRooms(d).map(({cleaning,assignedTo,notes,updatedAt,operational,...r})=>({...r,available:operational==='open'&&!s.reservations.some(b=>b.room===r.id&&live(b)&&b.checkIn<end&&b.checkOut>start)}))});
  }
  const permissions:Record<string,Permission>={staff:'staff.write',roomstate:'rooms.read',tasks:'tasks.read',payments:'payments.read',activity:'audit.read'};
  const user=await requireAccess(resource==='reservations'?undefined:permissions[resource]);
  if(method==='GET'){
   const d=await readHotel(),s=d as State;
-  if(resource==='reservations'){const all=url.searchParams.get('scope')==='hotel';if(all&&!can(user.role,'bookings.read'))fail(403,'Booking access is restricted.');return json({reservations:sorted(s.reservations.filter(r=>all||r.owner===user.userId)).map(publicBooking)});}
+  if(resource==='reservations'){const all=url.searchParams.get('scope')==='hotel';if(all&&!can(user.role,'bookings.read'))fail(403,'Booking access is restricted.');return json({reservations:sorted(s.reservations.filter(r=>all||ownedBy(r,user))).map(publicBooking)});}
   if(resource==='roomstate')return json({rooms:hotelRooms(d).map(r=>({...r,occupied:s.reservations.some(b=>b.room===r.id&&b.status==='checked-in')}))});
   if(resource==='staff')return json({staff:[...s.staff_access].sort((a,b)=>b.active-a.active||a.name.localeCompare(b.name)),owner:OWNER_EMAIL});
   if(resource==='tasks')return json({tasks:sorted(s.hotel_tasks.filter(t=>!['housekeeping','maintenance'].includes(user.role||'')||t.kind===user.role)),staff:s.staff_access.filter(r=>r.active).map(({email,name,role})=>({email,name,role}))});
@@ -61,7 +62,7 @@ export async function firestoreApi(req:Request,resource:string){try{
    const booking=s.reservations.find(r=>r.id===b.bookingId);if(!booking)fail(404,'Booking not found.');if(booking.status==='cancelled'&&b.kind==='payment')fail(400,'Cannot record payments on a cancelled booking.');const amount=b.kind==='refund'?-b.amount:b.amount,total=net(s,b.bookingId)+amount;if(total<0)throw new Error('refund_exceeds_paid');if(total>booking.total)throw new Error('payment_exceeds_balance');s.payments.push({id:b.id,bookingId:b.bookingId,amount,method:b.method,reference:b.reference,actor:user.email,createdAt:now});audit(b.kind==='refund'?'refund.recorded':'payment.recorded',b.bookingId,String(b.amount)+' INR');return{ok:true};
   }
   if(resource==='reservations'){
-   if(method==='PATCH'){const old=s.reservations.find(r=>r.id===b.id&&r.owner===user.userId);if(!old)fail(404,'Reservation not found.');if(old.status!=='confirmed'||old.checkIn<today())fail(400,'Only upcoming confirmed bookings can be cancelled.');if(net(s,b.id)>0)fail(409,'This booking has recorded payments.');old.status='cancelled';old.version++;audit('reservation.cancelled',b.id);return{ok:true};}
+   if(method==='PATCH'){const old=s.reservations.find(r=>r.id===b.id&&ownedBy(r,user));if(!old)fail(404,'Reservation not found.');if(old.status!=='confirmed'||old.checkIn<today())fail(400,'Only upcoming confirmed bookings can be cancelled.');if(net(s,b.id)>0)fail(409,'This booking has recorded payments.');old.status='cancelled';old.version++;audit('reservation.cancelled',b.id);return{ok:true};}
    if(method!=='POST'&&method!=='PUT')fail(405,'Method not allowed.');const update=method==='PUT';if(update)demand(s,user.email,'bookings.write');const staff=can(role,'bookings.write');if(!staff)b.email=user.email;
    const duration=nights(b.checkIn,b.checkOut),room=hotelRooms(data).find(r=>r.id===b.room);if(!room||b.guests>room.capacity)fail(400,'Choose a room with enough guest capacity.');if(duration<1||duration>30)fail(400,'A stay must be between 1 and 30 nights.');
    if(!update){if(b.status!=='confirmed')fail(400,'New bookings must be confirmed.');if(b.checkIn<today())fail(400,'Check-in cannot be in the past.');if(room.operational!=='open')throw new Error('room_maintenance');checkRoom(s,b);const id=crypto.randomUUID();s.reservations.push({...b,id,owner:user.userId,status:'confirmed',version:0,total:room.rate*duration,createdAt:now});audit('reservation.created',id,'Room '+b.room);return{id};}

@@ -2,16 +2,13 @@ import {env} from 'cloudflare:workers';
 import {firestoreEnabled,mutateHotel} from './firestore-hotel';
 import {getDocument} from './firestore-client';
 import {getHotelUser} from './auth';
-import {getChatGPTUser} from '../app/chatgpt-auth';
+
 import {allowedOrigin} from './origins';
 import {can,type Permission,type Role} from './permissions';
 export const OWNER_EMAIL=((env as typeof env & {HOTEL_OWNER_EMAIL?:string}).HOTEL_OWNER_EMAIL||'').trim().toLowerCase();
 export async function identity(){
  const user=await getHotelUser();if(!user)return null;
  const email=user.email.trim().toLowerCase();
- // Link legacy records only when BOTH providers prove the same email.
- const legacy=await getChatGPTUser();
- if(legacy&&legacy.email.trim().toLowerCase()===email&&legacy.userId!==user.userId){if(firestoreEnabled())await mutateHotel(data=>{for(const r of data.reservations)if(r.owner===legacy.userId)r.owner=user.userId;});else await env.DB!.prepare('UPDATE reservations SET owner=? WHERE owner=?').bind(user.userId,legacy.userId).run();}
  let role:Role|null=null;
  if(email===OWNER_EMAIL)role='owner';
  else if(firestoreEnabled()){const row=await getDocument('staff_access/'+encodeURIComponent(email));role=row?.data.active?row.data.role as Role:null;}

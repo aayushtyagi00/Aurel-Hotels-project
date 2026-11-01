@@ -8,6 +8,6 @@ await check('/api/rooms?start='+day(1)+'&end='+day(2),200);
 const session=await check('/api/session',200);assert.equal((await session.json()).user,null);count++;
 for(const path of ['/api/reservations','/api/admin/staff','/api/admin/tasks','/api/admin/rooms','/api/admin/payments','/api/admin/activity'])await check(path,401);
 await check('/api/admin/staff',401,{'oai-authenticated-user-id':'forged','oai-authenticated-user-email':'owner@example.test'});
-await check('/api/admin/staff',401,{cookie:'__session=invalid'});
+await check('/api/admin/staff',401,{Authorization:'Bearer invalid'});
 const admin=await fetch(base+'/admin',{redirect:'manual'});assert.ok([302,303,307,308].includes(admin.status));assert.ok(admin.headers.get('location')?.includes('/sign-in'));count++;
-console.log(count+' Clerk route checks passed. Signed-in role flows require a real Clerk session.');
+console.log(count+' Firebase Authentication route checks passed. Signed-in role flows require a real Firebase Authentication session.');

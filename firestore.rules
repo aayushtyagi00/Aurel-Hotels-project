@@ -1,5 +1,5 @@
 // Hotel data will be accessed only through the authenticated server API.
-// Clerk sessions are verified by the backend; Firebase client sessions are not used.
+// Firebase ID tokens are verified by the backend; Firebase client sessions are not used.
 // No client-side creates or updates are permitted, so no client validators apply.
 // Planned collections: reservations, staff_access, room_state, hotel_tasks,
 // payments, activity, and internal transaction locks. Server IAM is separate.

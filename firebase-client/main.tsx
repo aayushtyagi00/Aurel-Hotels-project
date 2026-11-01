@@ -1,29 +1,17 @@
-import React,{useEffect,useState} from 'react';
-import {createRoot} from 'react-dom/client';
-import {ClerkProvider,SignIn,SignUp,useAuth} from '@clerk/react';
-import Credits from '../app/photo-credits/page';
-import PublicSite,{type PublicPage} from '../app/public-site';
-import AdminPanel,{type User} from '../app/admin/panel';
-import {apiFetch,configureApi} from '../lib/api-fetch';
-import '../app/globals.css';
-const backend=import.meta.env.VITE_API_BASE as string;
+import React,{lazy,Suspense,useEffect,useState} from 'react';import {createRoot} from 'react-dom/client';
+import PublicSite,{type PublicPage} from '../app/public-site';import Credits from '../app/photo-credits/page';
+import {configureApi} from '../lib/api-fetch';import {setNavigator} from '../lib/navigation';
+import type {SessionUser} from './auth-runtime';import '../app/globals.css';
+const AuthRuntime=lazy(()=>import('./auth-runtime'));
+configureApi(import.meta.env.VITE_API_BASE,async()=>null);
 function App(){
- const {isLoaded,isSignedIn,getToken}=useAuth();
- const [user,setUser]=useState<(Omit<User,'role'>&{role:User['role']|null})|null>(null),[ready,setReady]=useState(false),[error,setError]=useState('');
- configureApi(backend,()=>getToken());
- const path=location.pathname;
- useEffect(()=>{if(!isLoaded)return;if(!isSignedIn){setUser(null);setReady(true);return;}let live=true;setReady(false);apiFetch('/api/session').then(async r=>{if(!r.ok)throw new Error('Unable to connect to hotel services.');return r.json();}).then(d=>{if(live){setUser((d as {user:(Omit<User,'role'>&{role:User['role']|null})|null}).user);setReady(true);}}).catch(e=>{if(live){setError(e.message);setReady(true);}});return()=>{live=false;};},[isLoaded,isSignedIn]);
- if(path.startsWith('/sign-in')||path.startsWith('/sign-up'))return <div className="auth-page"><a className="public-brand" href="/">AUREL<small>THE ART OF A SLOWER STAY</small></a>{path.startsWith('/sign-in')?<SignIn routing="path" path="/sign-in" signUpUrl="/sign-up" fallbackRedirectUrl="/"/>:<SignUp routing="path" path="/sign-up" signInUrl="/sign-in" fallbackRedirectUrl="/"/>}</div>;
- if(!ready)return <div className="auth-page"><span className="public-brand">AUREL</span><p>Preparing your stay…</p></div>;
- if(error)return <div className="auth-page"><h1>We will be right back.</h1><p>{error}</p><button className="primary" onClick={()=>location.reload()}>Try again</button></div>;
- if(path==='/admin'||path==='/stays'){
-  if(!user){location.replace('/sign-in?redirect_url='+encodeURIComponent(path));return null;}
-  if(path==='/admin')return user.role?<AdminPanel user={{...user,role:user.role}}/>:<div className="auth-page"><h1>This space is for your hotel team.</h1><p>Your account does not have staff access.</p><a href="/" className="primary">Return home</a></div>;
- }
- if(path==='/photo-credits')return <Credits/>;
- const pages:Record<string,PublicPage>={'/':'home','/rooms':'rooms','/about':'about','/faq':'faq','/stays':'stays'};
- if(!pages[path])return <div className="auth-page"><h1>Page not found</h1><a href="/">Return home</a></div>;
- const q=new URLSearchParams(location.search),start=q.get('start'),end=q.get('end');
- return <PublicSite user={user} page={pages[path]} dates={start&&end?{start,end}:undefined}/>;
+ const [route,setRoute]=useState(location.pathname+location.search),[authWanted,setAuthWanted]=useState(false),[authReady,setAuthReady]=useState(false),[user,setUser]=useState<SessionUser|null>(null);
+ const path=route.split('?')[0],privatePage=['/admin','/stays','/account'].includes(path),authPage=path.startsWith('/sign-in')||path.startsWith('/sign-up');
+ useEffect(()=>{function update(){setRoute(location.pathname+location.search);window.scrollTo(0,0);}const go=(url:string)=>{history.pushState({},'',url);update();};const clear=setNavigator(go);function click(e:MouseEvent){if(e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.defaultPrevented)return;const a=(e.target as Element).closest?.('a');if(!a||a.target||a.hasAttribute('download'))return;const url=new URL(a.href);if(url.origin!==location.origin||url.hash)return;e.preventDefault();go(url.pathname+url.search);}document.addEventListener('click',click);window.addEventListener('popstate',update);return()=>{clear();document.removeEventListener('click',click);window.removeEventListener('popstate',update);};},[]);
+ useEffect(()=>{const id=setTimeout(()=>setAuthWanted(true),1200);const intent=()=>setAuthWanted(true);document.addEventListener('pointerdown',intent,{once:true});return()=>{clearTimeout(id);document.removeEventListener('pointerdown',intent);};},[]);
+ useEffect(()=>{if(path==='/faq'){history.replaceState({},'','/about');setRoute('/about');}},[path]);
+ const needsAuth=authWanted||privatePage||authPage,pages:Record<string,PublicPage>={'/':'home','/rooms':'rooms','/amenities':'amenities','/offers':'offers','/about':'about','/faq':'about','/stays':'stays'};
+ const q=new URLSearchParams(route.split('?')[1]||''),start=q.get('start'),end=q.get('end');
+ return <>{!authPage&&path!=='/admin'&&path!=='/account'&&(path==='/photo-credits'?<Credits/>:pages[path]?path==='/stays'&&(!authReady||!user)?null:<PublicSite key={route} user={user} page={pages[path]} dates={start&&end?{start,end}:undefined}/>:<div className="auth-page"><h1>Page not found</h1><a href="/">Return home</a></div>)}<Suspense fallback={authPage||privatePage?<div className="auth-page">Loading secure sign-in…</div>:null}>{needsAuth&&<AuthRuntime key="auth-runtime" path={path} onUser={setUser} onReady={setAuthReady}/>}</Suspense></>;
 }
-createRoot(document.getElementById('root')!).render(<ClerkProvider publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY} localization={{signIn:{start:{title:'Sign in to Aurel'}},signUp:{start:{title:'Create your Aurel account'}}}} appearance={{variables:{colorPrimary:'#294e3e',borderRadius:'1.25rem'}}}><App/></ClerkProvider>);
+createRoot(document.getElementById('root')!).render(<App/>);
