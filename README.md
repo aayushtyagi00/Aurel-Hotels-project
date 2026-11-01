@@ -44,3 +44,9 @@ The selected Firebase project is aurel-hotels. Firestore migration is pending an
 
 Set HOTEL_OWNER_EMAIL privately in local and hosting runtime configuration to your verified Clerk owner email. The example owner@example.test is a placeholder, not an active owner account.
 
+## Firestore provisioning status
+Project `aurel-hotels`, database `aurel-hotel`, Enterprise native mode, Mumbai (`asia-south1`). The Firestore API is enabled and the checked-in server-only rules are deployed. Browser reads/writes are denied; Clerk-based authorization remains in the backend.
+
+`lib/firestore-client.ts` provides Worker-compatible server authentication, document reads, transactional queries, atomic writes, rollback and conflict retries. It requires a dedicated server service-account JSON in the secret runtime variable `FIRESTORE_SERVICE_ACCOUNT_JSON`; optional `FIRESTORE_PROJECT_ID` and `FIRESTORE_DATABASE_ID` default to the selected project/database. The JSON must never be committed or returned to the browser.
+
+IMPORTANT: the existing hotel routes still use D1. Backend cutover and data migration are NOT complete. They are pending the dedicated server identity, mapping the existing domain operations to Firestore transactions, and verification of booking conflicts and payment guards. The generic transport alone does not enforce hotel business rules. Do not change or remove D1 until migration and verification finish.
