@@ -43,3 +43,7 @@ yarn-error.log*
 
 # OS metadata
 .DS_Store
+
+/dist-firebase/
+/.firebase/
+firebase-debug.log*

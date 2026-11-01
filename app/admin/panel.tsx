@@ -1,4 +1,5 @@
 'use client';
+import {apiFetch} from '../../lib/api-fetch';
 import {SignOutButton} from '@clerk/nextjs';
 import {useCallback,useEffect,useState} from 'react';
 import {LayoutDashboard,CalendarDays,BedDouble,Users,Brush,Wrench,Wallet,ShieldCheck,History,ArrowUpRight,ArrowRight,Plus,Search,Download,Menu,Check,RefreshCw,LogOut,ExternalLink,BarChart3} from 'lucide-react';
@@ -16,7 +17,7 @@ export default function AdminPanel({user:initialUser}:{user:User}){
  const [data,setData]=useState<Reservation[]>([]),[rooms,setRooms]=useState<PublicRoom[]>([]),[tasks,setTasks]=useState<Task[]>([]),[staff,setStaff]=useState<Staff[]>([]),[assignees,setAssignees]=useState<Staff[]>([]),[payments,setPayments]=useState<Payment[]>([]),[activity,setActivity]=useState<Activity[]>([]);
  const [loading,setLoading]=useState(true),[error,setError]=useState(''),[toast,setToast]=useState(''),[query,setQuery]=useState(''),[filter,setFilter]=useState('all'),[menu,setMenu]=useState(false);
  const [booking,setBooking]=useState(false),[editing,setEditing]=useState<Reservation|null>(null),[editor,setEditor]=useState<Editor|null>(null);
- async function read(path:string){const r=await fetch(path);const d=await r.json() as Record<string,unknown>;if(!r.ok)throw new Error(String(d.error||'Unable to load hotel data.'));return d;}
+ async function read(path:string){const r=await apiFetch(path);const d=await r.json() as Record<string,unknown>;if(!r.ok)throw new Error(String(d.error||'Unable to load hotel data.'));return d;}
  const load=useCallback(async()=>{setLoading(true);setError('');try{
  const s=await read('/api/session');const u=s.user as User|null;if(!u?.role){location.replace('/admin');return;}setUser(u);
  const jobs:Promise<void>[]=[read('/api/admin/rooms').then(d=>setRooms(d.rooms as PublicRoom[]))];

@@ -1,7 +1,7 @@
 // Server-only Firestore transport for Cloudflare Workers (no browser credentials).
 import {env} from 'cloudflare:workers';
 
-type Config={FIRESTORE_PROJECT_ID?:string;FIRESTORE_DATABASE_ID?:string;FIRESTORE_SERVICE_ACCOUNT_JSON?:string};
+type Config={FIRESTORE_PROJECT_ID?:string;FIRESTORE_DATABASE_ID?:string;FIRESTORE_SERVICE_ACCOUNT_JSON?:string;FIRESTORE_USE_METADATA?:string};
 type Value={nullValue?:null;stringValue?:string;integerValue?:string;doubleValue?:number;booleanValue?:boolean;arrayValue?:{values?:Value[]};mapValue?:{fields?:Record<string,Value>};timestampValue?:string};
 export type DocumentData=Record<string,unknown>;
 type Document={name:string;fields?:Record<string,Value>;updateTime?:string};
@@ -11,7 +11,17 @@ const encoder=new TextEncoder();
 function base64url(bytes:Uint8Array){let text='';for(const byte of bytes)text+=String.fromCharCode(byte);return btoa(text).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');}
 function config(){const c=env as typeof env & Config;return{project:c.FIRESTORE_PROJECT_ID||'aurel-hotels',database:c.FIRESTORE_DATABASE_ID||'aurel-hotel',account:c.FIRESTORE_SERVICE_ACCOUNT_JSON};}
 async function bearer(){
- const {account}=config();if(!account)throw new Error('Firestore server credentials are not configured.');
+ const {account}=config();
+ // Google-managed runtimes can use their attached service identity, without a
+ // downloadable private key. This branch must be explicitly enabled at runtime.
+ if(!account&&(env as typeof env & Config).FIRESTORE_USE_METADATA==='true'){
+  if(cachedToken?.account==='metadata'&&cachedToken.expires>Date.now()+60000)return cachedToken.value;
+  const r=await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',{headers:{'Metadata-Flavor':'Google'},signal:AbortSignal.timeout(5000)});
+  if(!r.ok)throw new Error('The attached Google server identity is unavailable.');
+  const token=await r.json() as {access_token:string;expires_in:number};
+  cachedToken={value:token.access_token,expires:Date.now()+token.expires_in*1000,account:'metadata'};return token.access_token;
+ }
+ if(!account)throw new Error('Firestore server credentials are not configured.');
  const a=JSON.parse(account) as {client_email:string;private_key:string;project_id:string};
  if(!a.client_email||!a.private_key||a.project_id!==config().project)throw new Error('Invalid Firestore service account configuration.');
  if(cachedToken&&cachedToken.account===a.client_email&&cachedToken.expires>Date.now()+60000)return cachedToken.value;
@@ -47,7 +57,7 @@ async function request<T>(suffix:string,method='GET',body?:unknown):Promise<T>{
  const data=await response.json() as T & {error?:{status?:string}};if(!response.ok)throw new FirestoreError(response.status,data.error?.status||'UNKNOWN');return data;
 }
 export async function getDocument(path:string,transaction?:string){
- docName(path);try{const d=await request<Document>('/'+path+(transaction?'?transaction='+encodeURIComponent(transaction):''));return{data:decodeFields(d.fields||{}),updateTime:d.updateTime};}catch(e){if(e instanceof FirestoreError&&e.status===404)return null;throw e;}
+ docName(path);const encodedPath=path.split('/').map(encodeURIComponent).join('/');try{const d=await request<Document>('/'+encodedPath+(transaction?'?transaction='+encodeURIComponent(transaction):''));return{data:decodeFields(d.fields||{}),updateTime:d.updateTime};}catch(e){if(e instanceof FirestoreError&&e.status===404)return null;throw e;}
 }
 // Structured queries are used here because these reads participate in native
 // read-write transactions; no Firestore queries or aggregation run in a browser.

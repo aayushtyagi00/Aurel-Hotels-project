@@ -1,4 +1,5 @@
 'use client';
+import {apiFetch} from '../../lib/api-fetch';
 import {useEffect,useRef,useState,type FormEvent} from 'react';import {X,Check} from 'lucide-react';
 import {can,roles,roleDetails,type Role} from '../../lib/permissions';import {money,type Reservation} from '../../lib/hotel';
 import type {PublicRoom} from '../../components/booking-dialog';import type {Staff,User} from './panel';
@@ -12,7 +13,7 @@ export default function OperationDialog({editor,onClose,onSaved,user,rooms,assig
  if(editor.kind==='room'){path='/api/admin/rooms';method='PUT';body=can(user.role,'rooms.write')?{room:b.room,cleaning:b.cleaning,operational:b.operational,rate:Number(b.rate),assignedTo:b.assignedTo,notes:b.notes}:user.role==='housekeeping'?{room:b.room,cleaning:b.cleaning}:{room:b.room,operational:b.operational};}
  if(editor.kind==='task'){path='/api/admin/tasks';body={...(b.id?{id:b.id}:{}),title:b.title,room:b.room,kind:b.kind,priority:b.priority,status:b.status,assignedTo:b.assignedTo,notes:b.notes};}
  if(editor.kind==='payment'){path='/api/admin/payments';body={id:b.id,bookingId:b.bookingId,kind:b.kind,amount:Number(b.amount),method:b.method,reference:b.reference};}
- const r=await fetch(path,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json() as {error:string};if(!r.ok)throw new Error(d.error);onSaved();onClose();
+ const r=await apiFetch(path,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json() as {error:string};if(!r.ok)throw new Error(d.error);onSaved();onClose();
  }catch(e){setError((e as Error).message);}finally{setSaving(false);}}
  const select=(name:string,key:string,options:string[],disabled=false)=><label>{name}<select aria-label={name} value={String(b[key]||'')} disabled={disabled} onChange={e=>field(key,e.target.value)}>{options.map(s=><option key={s} value={s}>{s.replaceAll('-',' ')}</option>)}</select></label>;
  return <dialog ref={ref} onCancel={e=>{if(saving)e.preventDefault();else onClose();}}><form onSubmit={save}><div className="modal-header"><div><span className="eyebrow">AUREL OPERATIONS</span><h2>{editor?.kind==='staff'?'Manage team access':editor?.kind==='room'?'Room '+b.room:editor?.kind==='task'?'Every detail matters.':'Record a transaction'}</h2></div><button type="button" className="icon-button" onClick={onClose} disabled={saving} aria-label="Close editor"><X/></button></div><div className="modal-body"><div className="form-grid">
