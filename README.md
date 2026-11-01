@@ -39,7 +39,8 @@ Source: public UI in `app/public-site.tsx`; operations UI in `app/admin/`; APIs 
 The guest site now has separate `/`, `/rooms`, `/about`, `/faq`, and authenticated `/stays` routes. Date search navigates to `/rooms?start=YYYY-MM-DD&end=YYYY-MM-DD`; invalid or over-30-night stays are rejected. Account actions are in a circular profile menu with role-dependent admin access.
 
 ## Pending external connections
-GitHub push requires a destination repository and authenticated GitHub connection. No GitHub remote is currently configured.
-The requested Firestore migration is pending a selected Firebase project and an authenticated Firebase connection. The running backend still uses D1; it must not be described as Firestore-backed. Migrate bookings, staff roles, room state, tasks, payments, and audit records using server-only credentials. Preserve Clerk authorization, atomic booking overlap checks, payment/refund guards, and existing record IDs. Validate migration against a staging Firestore database before cutover; never enable anonymous Firestore client access to hotel records.
+Source is published at https://github.com/aayushtyagi00/Aurel-Hotels-project. Local secrets, runtime data, and the owner contact address are excluded.
+The selected Firebase project is aurel-hotels. Firestore migration is pending an authenticated Firebase connection (Firebase CLI currently reports Failed to authenticate). The running backend still uses D1; it must not be described as Firestore-backed. Migrate bookings, staff roles, room state, tasks, payments, and audit records using server-only credentials. Preserve Clerk authorization, atomic booking overlap checks, payment/refund guards, and existing record IDs. Validate migration against a staging Firestore database before cutover; never enable anonymous Firestore client access to hotel records.
 
 Set HOTEL_OWNER_EMAIL privately in local and hosting runtime configuration to your verified Clerk owner email. The example owner@example.test is a placeholder, not an active owner account.
+
