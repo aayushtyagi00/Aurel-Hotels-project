@@ -1,3 +1,4 @@
+export const majorCities = ['Delhi','Mumbai','Kolkata','Bengaluru','Chennai','Hyderabad','Pune','Jaipur','Ahmedabad','Lucknow','Chandigarh','Kochi'];
 export const rooms = [
 {id:'101',name:'Garden Classic',type:'Classic',rate:6500,capacity:2,floor:1,area:32,tone:'sage',detail:'A peaceful retreat overlooking the courtyard.',features:['King bed','Garden view','Rain shower']},
 {id:'102',name:'Garden Classic',type:'Classic',rate:6500,capacity:2,floor:1,area:32,tone:'sage',detail:'A peaceful retreat overlooking the courtyard.',features:['King bed','Garden view','Rain shower']},
@@ -11,8 +12,8 @@ export const rooms = [
 {id:'302',name:'The Aurel Suite',type:'Suite',rate:18000,capacity:4,floor:3,area:78,tone:'sand',detail:'Your own elevated sanctuary, above it all.',features:['King + sofa bed','Living room','Private balcony']},
 {id:'303',name:'Skyline Penthouse',type:'Suite',rate:26000,capacity:4,floor:3,area:110,tone:'clay',detail:'A remarkable stay with the city at your feet.',features:['Two bedrooms','Rooftop deck','Dining area']},
 {id:'304',name:'Skyline Penthouse',type:'Suite',rate:26000,capacity:4,floor:3,area:110,tone:'clay',detail:'A remarkable stay with the city at your feet.',features:['Two bedrooms','Rooftop deck','Dining area']}
-];
-export type Reservation={version:number;id:string;guest:string;email:string;phone:string;room:string;checkIn:string;checkOut:string;guests:number;status:string;total:number;notes:string;createdAt:string};
+].map((room,index)=>({...room,city:majorCities[index],image:'/images/'+(room.type==='Classic'?'classic':room.type==='Deluxe'?'deluxe':'suite')+'.webp'}));
+export type Reservation={version:number;id:string;guest:string;email:string;phone:string;room:string;checkIn:string;checkOut:string;guests:number;status:string;total:number;notes:string;createdAt:string;adults?:number;children?:number;city?:string;roomName?:string;image?:string};
 export const money=(n:number)=>new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(n);
 export const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 export const addDays=(s:string,n:number)=>new Date(Date.parse(s+'T00:00:00Z')+n*86400000).toISOString().slice(0,10);

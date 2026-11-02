@@ -9,7 +9,7 @@ const worker = {
     const cross=origin&&origin!==new URL(request.url).origin;
     if(request.method==='OPTIONS'&&cross){
       if(!allowedOrigin(origin!))return new Response(null,{status:403});
-      return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':origin!,'Access-Control-Allow-Methods':'GET,POST,PUT,PATCH,OPTIONS','Access-Control-Allow-Headers':'Authorization,Content-Type','Access-Control-Max-Age':'600','Vary':'Origin'}});
+      return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':origin!,'Access-Control-Allow-Methods':'GET,POST,PUT,PATCH,DELETE,OPTIONS','Access-Control-Allow-Headers':'Authorization,Content-Type','Access-Control-Max-Age':'600','Vary':'Origin'}});
     }
     if((env as Cloudflare.Env & {HOTEL_READ_ONLY?:string}).HOTEL_READ_ONLY==='true'&&new URL(request.url).pathname.startsWith('/api/')&&!['GET','HEAD','OPTIONS'].includes(request.method)){
       return Response.json({error:'Hotel updates are briefly paused for a database upgrade. Please try again shortly.'},{status:503,headers:{'Cache-Control':'no-store',...(cross&&allowedOrigin(origin!)?{'Access-Control-Allow-Origin':origin!,'Vary':'Origin'}:{})}});

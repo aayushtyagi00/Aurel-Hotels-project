@@ -1,4 +1,3 @@
-import {env} from 'cloudflare:workers';
 import {getDocument,queryDocuments,runTransaction,type DocumentData,type Write} from './firestore-client';
 import {rooms as inventory} from './hotel';
 // A small single-property hotel. All writes acquire the same revision document
@@ -9,7 +8,6 @@ export const collections=['reservations','staff_access','room_state','hotel_task
 export type Collection=typeof collections[number];
 export type RecordData=DocumentData & {id?:string;email?:string;room?:string};
 export type HotelData=Record<Collection,RecordData[]>;
-export function firestoreEnabled(){return(env as typeof env & {FIRESTORE_ENABLED?:string}).FIRESTORE_ENABLED==='true';}
 export const recordKey=(collection:Collection,row:RecordData)=>String(collection==='staff_access'?row.email:collection==='room_state'?row.room:row.id);
 export const documentPath=(collection:Collection,row:RecordData)=>collection+'/'+encodeURIComponent(recordKey(collection,row));
 export async function readHotel(transaction?:string):Promise<HotelData>{const rows=await Promise.all(collections.map(c=>queryDocuments(c,{},transaction)));return Object.fromEntries(collections.map((c,i)=>[c,rows[i].map(r=>r.data)])) as HotelData;}
@@ -24,5 +22,8 @@ export async function mutateHotel<T>(change:(data:HotelData)=>T|Promise<T>):Prom
   return{result,writes};
  });
 }
-export function hotelRooms(data:HotelData){return inventory.map(r=>{const s=data.room_state.find(s=>s.room===r.id);return{...r,rate:Number(s?.rate??r.rate),cleaning:String(s?.cleaning||'clean'),operational:String(s?.operational||'open'),assignedTo:String(s?.assignedTo||''),notes:String(s?.notes||''),updatedAt:String(s?.updatedAt||''),image:'/images/'+(r.type==='Classic'?'classic':r.type==='Deluxe'?'deluxe':'suite')+'.webp'};});}
+export function hotelRooms(data:HotelData){
+ const ids=new Set([...inventory.map(r=>r.id),...data.room_state.filter(s=>s.name).map(s=>String(s.room))]);
+ return [...ids].flatMap(id=>{const seed=inventory.find(r=>r.id===id),s=data.room_state.find(s=>s.room===id);if(s?.deleted)return[];const base=seed||{id,name:'Room',type:'Classic',city:'Delhi',capacity:2,floor:1,area:30,tone:'sage',detail:'',features:[],rate:6500,image:'/images/classic.webp'};return[{...base,id,name:String(s?.name??base.name),type:String(s?.type??base.type),city:String(s?.city??base.city),capacity:Number(s?.capacity??base.capacity),area:Number(s?.area??base.area),floor:Number(s?.floor??base.floor),detail:String(s?.detail??base.detail),features:(s?.features??base.features) as string[],image:String(s?.image??base.image),catalogVersion:Number(s?.catalogVersion||0),rate:Number(s?.rate??base.rate),cleaning:String(s?.cleaning||'clean'),operational:String(s?.operational||'open'),assignedTo:String(s?.assignedTo||''),notes:String(s?.notes||''),updatedAt:String(s?.updatedAt||'')}];});
+}
 export function recordActivity(data:HotelData,actor:string,action:string,entity:string,detail=''){data.activity.push({id:crypto.randomUUID(),actor,action,entity,detail,created_at:new Date().toISOString()});}
