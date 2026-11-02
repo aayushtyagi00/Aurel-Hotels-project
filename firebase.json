@@ -36,6 +36,31 @@
         "source": "/faq",
         "destination": "/about",
         "type": 301
+      },
+      {
+        "source": "/images/classic.jpg",
+        "destination": "/images/classic.webp",
+        "type": 301
+      },
+      {
+        "source": "/images/deluxe.jpg",
+        "destination": "/images/deluxe.webp",
+        "type": 301
+      },
+      {
+        "source": "/images/hero.jpg",
+        "destination": "/images/hero.webp",
+        "type": 301
+      },
+      {
+        "source": "/images/pool.jpg",
+        "destination": "/images/pool.webp",
+        "type": 301
+      },
+      {
+        "source": "/images/suite.jpg",
+        "destination": "/images/suite.webp",
+        "type": 301
       }
     ]
   },

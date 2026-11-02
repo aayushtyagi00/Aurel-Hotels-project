@@ -13,7 +13,9 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "dev:api": "node scripts/local-preview.mjs",
     "build:frontend": "node scripts/build-firebase.mjs",
-    "test:hotel": "node --experimental-vm-modules scripts/test-hotel.mjs"
+    "test:hotel": "node --experimental-vm-modules scripts/test-hotel.mjs",
+    "test:auth": "node --experimental-vm-modules scripts/test-auth.mjs",
+    "test:search": "node --experimental-vm-modules scripts/test-search.mjs"
   },
   "dependencies": {
     "firebase": "12.19.0",

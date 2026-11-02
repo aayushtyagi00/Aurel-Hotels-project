@@ -1,6 +1,5 @@
 import PublicSite from '../public-site';
 import {identity} from '../../lib/access';
-import {redirect} from 'next/navigation';
 export const dynamic='force-dynamic';
 export default async function Page({searchParams}:{searchParams:Promise<{start?:string;end?:string}>}){
  const u=await identity();

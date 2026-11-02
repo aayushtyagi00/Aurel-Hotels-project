@@ -5,15 +5,16 @@ import {getHotelUser} from './auth';
 
 import {allowedOrigin} from './origins';
 import {can,type Permission,type Role} from './permissions';
+import {staffScope} from './city-access';
 export const OWNER_EMAIL=((env as typeof env & {HOTEL_OWNER_EMAIL?:string}).HOTEL_OWNER_EMAIL||'').trim().toLowerCase();
 export async function identity(){
  const user=await getHotelUser();if(!user)return null;
  const email=user.email.trim().toLowerCase();
- let role:Role|null=null;
+ let role:Role|null=null;let cities:unknown=[];
  if(email===OWNER_EMAIL)role='owner';
- else{const row=await getDocument('staff_access/'+encodeURIComponent(email));role=row?.data.active?row.data.role as Role:null;}
+ else{const row=await getDocument('staff_access/'+encodeURIComponent(email));role=row?.data.active?row.data.role as Role:null;cities=row?.data.cities;}
 
- return {...user,email,role};
+ return {...user,email,role,cities:staffScope(role,cities)};
 }
 export class HttpError extends Error{constructor(public status:number,message:string){super(message);}}
 export async function requireAccess(permission?:Permission){const user=await identity();if(!user)throw new HttpError(401,'Please sign in to continue.');if(permission&&!can(user.role,permission))throw new HttpError(403,'Your role does not have access to this action.');return user;}
