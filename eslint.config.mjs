@@ -1,39 +1,8 @@
-import { defineConfig, globalIgnores } from "eslint/config";
-import nextVitals from "eslint-config-next/core-web-vitals";
-import nextTs from "eslint-config-next/typescript";
-
-const eslintConfig = defineConfig([
-  ...nextVitals,
-  ...nextTs,
-  globalIgnores([
-    "dist/**",
-    "dist-firebase/**",
-    ".firebase/**",
-    ".vinext/**",
-    ".wrangler/**",
-    ".sites-runtime/**",
-    "outputs/**",
-    "work/**",
-  ]),
-  {
-    files: ["app/**/*.{ts,tsx}", "components/**/*.{ts,tsx}", "firebase-client/**/*.{ts,tsx}"],
-    rules: {
-      // These views also run in the Firebase Vite SPA, whose navigator handles anchors.
-      "@next/next/no-html-link-for-pages": "off",
-      // Keep effect initialization visible for review without blocking builds.
-      "react-hooks/set-state-in-effect": "warn",
-    },
-  },
-  {
-    files: ["components/ui/**/*.{ts,tsx}", "hooks/use-mobile.ts"],
-    rules: {
-      // These files are vendored verbatim from shadcn@4.17.0. Keep the
-      // registry source intact while applying the stricter rules to Site code.
-      "@typescript-eslint/no-unused-vars": "off",
-      "react-hooks/purity": "off",
-      "react-hooks/set-state-in-effect": "off",
-    },
-  },
+import {defineConfig,globalIgnores} from 'eslint/config';
+import parser from '@typescript-eslint/parser';
+import ts from '@typescript-eslint/eslint-plugin';
+import hooks from 'eslint-plugin-react-hooks';
+export default defineConfig([
+ globalIgnores(['node_modules/**','dist/**','dist-worker/**','dist-firebase/**','.firebase/**','.next/**','.wrangler/**','.sites-runtime/**','outputs/**','work/**']),
+ {files:['**/*.{ts,tsx,mts,mjs}'],languageOptions:{parser,parserOptions:{ecmaVersion:'latest',sourceType:'module',ecmaFeatures:{jsx:true}}},plugins:{'@typescript-eslint':ts,'react-hooks':hooks},rules:{'@typescript-eslint/no-explicit-any':'error','@typescript-eslint/no-unused-vars':['warn',{argsIgnorePattern:'^_',varsIgnorePattern:'^_'}],'react-hooks/rules-of-hooks':'error','react-hooks/exhaustive-deps':'warn'}},
 ]);
-
-export default eslintConfig;

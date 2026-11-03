@@ -1,0 +1,39 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aurel-api",
+  "main": "worker/index.ts",
+  "account_id": "0492858cdf07a30b32133860f76430c1",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "FIRESTORE_PROJECT_ID": "aurel-hotels",
+    "FIRESTORE_DATABASE_ID": "aurel-hotel",
+    "HOTEL_READ_ONLY": "false"
+  },
+  "ratelimits": [
+    {
+      "name": "PUBLIC_API_LIMITER",
+      "namespace_id": "4001",
+      "simple": {
+        "limit": 120,
+        "period": 60
+      }
+    },
+    {
+      "name": "BOOKING_LIMITER",
+      "namespace_id": "4002",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.1
+  }
+}

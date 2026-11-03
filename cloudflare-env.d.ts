@@ -1,6 +1,1 @@
-declare namespace Cloudflare {
-  interface Env {
-    DB?: D1Database;
-    BUCKET?: R2Bucket;
-  }
-}
+declare namespace Cloudflare { interface Env { FIRESTORE_PROJECT_ID?:string; FIRESTORE_DATABASE_ID?:string; FIRESTORE_SERVICE_ACCOUNT_JSON?:string; HOTEL_OWNER_EMAIL?:string; HOTEL_READ_ONLY?:string; FIREBASE_AUTH_API_KEY?:string; } }

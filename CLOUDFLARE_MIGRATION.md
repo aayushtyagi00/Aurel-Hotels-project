@@ -1,0 +1,11 @@
+# Direct Cloudflare migration — 3 November 2026
+
+The backend has been converted from a managed framework server to an API-only Cloudflare Worker. Firebase Authentication, Firebase Hosting, and the existing `aurel-hotels/aurel-hotel` Firestore records are retained. No hotel records are copied or replaced.
+
+The native Worker is `aurel-api` in account `0492858cdf07a30b32133860f76430c1`; its URL is `https://aurel-api.aayushtyagi.workers.dev`. Source deployment uses Wrangler directly. The server wrapper, connector bridge, managed-host manifest, framework server pages, framework build/plugin dependencies and publishing helper scripts were removed. The React UI remains served by Firebase Hosting.
+
+A dedicated Google service identity is granted `roles/datastore.user`. Its private credential is transferred directly to Worker secrets in memory; no private key is committed or written to a source/secret file. Failed credential transfers remove their newly created key. The existing owner identity is preserved.
+
+The standalone bundle is about 50 KB compressed, below Workers Free's bundle limit. Worker startup time is distinct from request CPU time. A small bundle and successful requests are not a guarantee every future workload fits the Free plan's CPU quota.
+
+Validation includes 179 hotel API checks, 22 security/Worker checks, 14 authentication-flow checks and 7 search checks, TypeScript, lint, a standalone Worker bundle and a Firebase frontend build. Signed-in UI testing and distributed concurrency/load testing remain separate checks. The new Worker was configured with three server secrets. Live checks verified `/api/health`, room search using existing Firestore records, a null anonymous session, and rejection of anonymous reservation/export access. Browser checks confirmed room data and private-route rejection. Firebase Hosting was rebuilt/released against the new Worker. The live frontend JavaScript was fetched and verified to contain the new workers.dev API URL and no old chatgpt.site backend URL. The old managed backend’s Firestore credential and owner secret were removed and its configuration was set read-only; its same saved version is redeployed with that secret-free configuration to apply retirement. No paid plan was enabled.

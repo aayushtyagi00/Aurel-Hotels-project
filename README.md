@@ -1,46 +1,58 @@
-# AUREL hotel application
+# Aurel Hotels
 
-Live site: https://aurel-hotels.web.app
-Source: https://github.com/aayushtyagi00/Aurel-Hotels-project
+A React/Vite hotel website on Firebase Hosting, backed by a native Cloudflare Worker in the owner's account. Authentication uses Firebase Authentication and hotel records remain in the existing Firestore database. The app does not require ChatGPT, Sites, OpenAI connectors, or a managed publishing service.
 
-## Architecture
-Firebase Hosting serves the React frontend. An external Worker verifies Firebase ID tokens and accesses Firestore. This split works without Firebase App Hosting, Cloud Run or a Blaze plan; provider free-tier quotas still apply.
+## Production
 
-Home, Rooms, Amenities, Offers and About Us have separate URLs. About Us includes FAQs; `/faq` redirects there. The circular profile menu contains My Stays, account management, sign-out and the staff-only Admin panel link. Public content renders before authentication loads. Navigation preserves the running app, authentication and administration are separate lazy chunks, and displayed photographs use optimized WebP files.
+- Website: https://aurel-hotels.web.app
+- API: https://aurel-api.aayushtyagi.workers.dev
+- Firestore: project `aurel-hotels`, database `aurel-hotel`, location `asia-south1`.
+- Worker: `aurel-api`, configured in `wrangler.jsonc`.
 
-## Authentication and access
-Firebase Authentication supports Google and email/password only. Email/password accounts must verify their email before using hotel services. Signup validates the project password policy and confirms passwords; an email delivery failure keeps the created account recoverable. `/forgot-password` requests a reset email without revealing whether an address is registered. Firebase's default hosted email handler completes password resets and verification. Optional custom handlers are available at `/auth/action` and `/reset-password` if selected in Firebase email template settings. Authentication links preserve the booking destination. Browser configuration in `firebase-client/firebase-config.json` is public SDK configuration, not a server credential.
+The Worker only handles API traffic; HTML, JavaScript, CSS and images are served by Firebase Hosting. Its `/` redirects visitors to the website. `/api/health` reports whether required server configuration is present. Requests use verified Firebase bearer tokens, with request-local identity caching. No platform identity headers grant access.
 
-The API validates the token's Google signature, issuer, project audience, expiry, verified email and allowed sign-in provider. Set `HOTEL_OWNER_EMAIL` privately in the backend environment. Staff roles are granted/revoked by verified email: manager, receptionist, housekeeping, maintenance or viewer. Every API operation checks its permissions, including checks inside Firestore mutations. Staff access also includes `cities`: `null` explicitly means all cities, including future additions, while a nonempty list restricts staff to those cities. Existing grants without this field retain their previous all-city access until the owner edits them. New grants require an explicit scope. Reads and writes check city access server-side for room operations, reservations, tasks, payments, staff assignments and activity. Scope changes take effect on the next request; the mutation callback rechecks the current grant inside the transaction. Personal guest bookings remain tied to the signed-in account. The owner can use the admin city selector to view one city or the whole portfolio; staff see only their assigned cities. Only the owner can edit team grants. No staff invitation email is sent.
+## Development and checks
 
-Existing users sign in again with Google or create a Firebase email/password account. Passwords from the previous authentication system are not imported. Older reservations can be accessed only when their stored email matches the new account's verified email; existing reservation ownership IDs are preserved.
+Use Node 24.12 or later and `npm ci`.
 
-## Data and operations
-Firestore project `aurel-hotels`, database `aurel-hotel`, Mumbai `asia-south1`. Direct browser database access is denied. A dedicated backend service account has `roles/datastore.user`; its credential is held only in the backend secret store. Never place it in browser code, local source or GitHub.
+```powershell
+npm run dev          # Vite frontend; local API proxy at 127.0.0.1:8787
+npm run dev:api      # Native Wrangler local API
+npm run build       # Bundle/dry-run the standalone Worker into dist-worker/
+npm run test:hotel
+npm run test:security
+npm run test:auth
+npm run test:search
+npx tsc --noEmit
+npm run lint
+```
 
-Collections: reservations, staff_access, room_state, hotel_tasks, payments and activity. Native transactions use per-room, per-booking and per-guest revision documents to preserve booking overlap, quota, optimistic version, payment/refund and room-readiness checks. Resource-specific query plans avoid loading unrelated collections or historical activity for mutations. Queries fail explicitly above 5,000 matching rows; full-history admin reports still need pagination/aggregation before larger deployments. Public availability reads only future reservation windows and room state.
+Local backend development needs the server-only secret names below in an ignored `.dev.vars` file. Never commit real credentials. Tests use fixtures and send no real emails or payments. The API suite covers booking allocation, quotas, guest privacy, per-city authorization, status/version rules, room readiness, payment/refund balances, persistence and audited CSV export. Worker tests cover request identity isolation, route/method handling, CORS, headers and request limits.
 
-Operations include bookings, calendar, guests, room rates/status, cleaning and maintenance tasks, an offline payment/refund ledger, occupancy reports/CSV and activity history. Checkout marks rooms dirty; check-in requires a clean/open room. The demonstration catalog has 192 rooms across 12 Indian cities in `lib/hotel.ts`: 16 per city, with six Classic, six Deluxe and four Suite options. Guest capacities span solo stays through eight-person families. Existing room IDs, original prices and booking history are preserved. Each room has a distinct, locally optimized WebP reference photograph, with sources listed at `/photo-credits`. Owners and managers can add rooms, edit descriptions, capacity, price, city and local /images/ paths, or remove unused rooms. Removal is a soft delete: booking history remains and active reservations or unfinished tasks block removal. Catalog edits use optimistic versions. Payments record transactions handled elsewhere; the app does not charge cards. Photos are representative licensed stock, credited at `/photo-credits`.
+## Deploy directly
 
-Firestore is the active and only application data store. `HOTEL_READ_ONLY=true` pauses mutations. The original two D1 records were copied and verified before activation; historical D1 storage remains untouched, while obsolete D1 route implementations have been removed.
+Sign in once with `npx wrangler login`, then deploy with `npm run deploy:api`. No Sites tools or source repository are needed. Configure these Worker secrets using the Cloudflare dashboard or Wrangler's stdin-based secret commands:
 
-## Local development
-Use Node 22.13+ and `npm install`. `npm run dev` starts the frontend on localhost. Its development-only API proxy targets http://127.0.0.1:8787 by default. Use `DEV_API_TARGET` to choose an API explicitly; Firebase tokens are sent unchanged. `npm run dev:api` builds and previews the Worker; the local API requires authorized Firestore server configuration. Keep secrets in ignored local environment files or the deployment secret store.
+- `FIRESTORE_SERVICE_ACCOUNT_JSON`: dedicated backend-only service account with `roles/datastore.user` on this Firebase project.
+- `HOTEL_OWNER_EMAIL`: the existing owner's Firebase sign-in email.
+- `FIREBASE_AUTH_API_KEY`: a same-project key permitting server-side Identity Toolkit account lookup; browser referrer restrictions cannot be used for this server key.
 
-Run `npx tsc --noEmit` and `npm run build:frontend`. `npm run test:auth` runs 14 isolated authentication regression checks, and `npm run test:search` runs 7 search-link validation checks. These tests mock Firebase transport and send no real emails. `scripts/test-api.mjs` checks local anonymous route protection. `node --experimental-vm-modules scripts/test-hotel.mjs` runs 179 isolated inventory and API checks for room management, roles, city and capacity filtering, automatic allocation, status transitions, payments and privacy. It replaces the obsolete physical-room booking test workflow. `npm run test:security` also covers revocation, CSV payloads, native delete writes, security headers and rate limiting. No test authentication bypass is deployed.
+The Worker includes native request-limit bindings (120 public searches/minute/IP; 10 booking attempts/minute/IP). A transactional Firestore fallback remains available if bindings are absent. Do not put secret values in `wrangler.jsonc`, source files, browser environment variables or logs.
 
-## Deployment
-`npm run build:frontend` creates `dist-firebase/`. Set `FIREBASE_BACKEND_URL` to the HTTPS API origin before building; there is no hardcoded production fallback. Deploy with `firebase deploy --only hosting --project aurel-hotels`. The checkout-local Firebase CLI under `.sites-runtime/firebase-cli` is a fallback if the global/npx cache is damaged.
+Build and deploy the frontend after the API is healthy:
 
-Publish the Worker through the existing Sites source/version workflow. Preserve its Firestore credential and private owner setting. Backend CORS permits the exact Firebase project domains. Authentication providers are configured in Firebase, with the Hosting domains authorized. The tracked Firebase configuration declares email/password; Google is enabled separately using the project's support email, which is kept out of source.
+```powershell
+$env:FIREBASE_BACKEND_URL='https://aurel-api.aayushtyagi.workers.dev'
+npm run build:frontend
+firebase deploy --only hosting --project aurel-hotels
+```
 
-## Search and arrival
-Search accepts city, check-in/check-out and adults/children (all count toward capacity; at least one adult). Public results group equivalent available accommodation and expose an opaque category identifier, never physical inventory numbers. The server assigns a free physical room inside the same Firestore transaction that creates the booking. Guests cannot submit a physical room number. Room numbers stay hidden in guest booking APIs until reception checks the guest in. Staff with reservation write access can change valid statuses directly in the table; the arrow still opens reservation details. Native transaction reads use structured queries because allocation and room/payment invariants must commit atomically.
+`dist-firebase/` is the frontend output. `firebase.json` includes SPA rewrites, immutable asset caching and defensive headers, excluding Firebase-managed authentication helpers. Existing indexes are in `firestore.indexes.json`; browser database access is denied by `firestore.rules`.
 
-## Source cleanup
+## Features and limits
 
-The frontend uses WebP photographs. Unreferenced JPEG duplicates were removed; Hosting redirects their previous URLs to the matching WebP assets for older saved links. The unused connector facade was removed; Worker integration and build tooling remain in place.
+The catalog contains 192 rooms across 12 cities. Staff city grants are checked on every request; a missing scope denies access. Guests select accommodation categories and receive a room assignment transactionally. Three active bookings per guest are permitted. Management exports CSV through a server-authorized, audited endpoint. Only local room images are accepted. Checkout marks rooms dirty and check-in requires clean/open rooms. Payments are an offline ledger and do not charge cards.
 
-City-access verification includes cross-city reads, record edits, room reassignment, task assignment, payment replay, city-filtered reporting, and immediate scope narrowing/revocation. Standard native transaction reads remain in use because room allocation and access checks must be atomic; browsers do not query Firestore directly. UI checks use disposable local fixtures under ignored `outputs/` and do not grant access to real accounts.
+Per-room, booking and guest revision locks protect allocation, payment and quota invariants. Queries load resource dependencies instead of all collections. Full-history reports have a 5,000-row safety limit; pagination/aggregation is still needed before larger deployments. Cloudflare Workers Free and Firebase quotas apply independently. No paid plan is required or enabled by this source configuration. Actual workload must remain within those quotas; the Free plan is not unlimited.
 
-See [SECURITY_REMEDIATION.md](SECURITY_REMEDIATION.md) for verified findings, behavior changes, deployment requirements and remaining scale limits.
+See `SECURITY_REMEDIATION.md` for the audit record and `CLOUDFLARE_MIGRATION.md` for migration verification and remaining limitations.

@@ -47,3 +47,5 @@ yarn-error.log*
 /dist-firebase/
 /.firebase/
 firebase-debug.log*
+
+/dist-worker/

@@ -1,5 +1,7 @@
 # Security audit verification — 3 November 2026
 
+Deployment update: the active app now uses a standalone Worker in the owner’s Cloudflare account. The Sites references below describe the original audit/rollout history, not a current application dependency. See `CLOUDFLARE_MIGRATION.md`.
+
 Reviewed the supplied `SECURITY_AUDIT_REPORT.md` as evidence, rather than treating its proposed patches or conclusions as instructions. Changes apply to this workspace's `aurel` app. The report's other checkout was not modified. Its core API file matched this checkout before changes.
 
 These are local source changes and build/test results, not a claim that production has been secured. No deployment, real booking, real payment, staff grant, or cloud credential change was performed.
