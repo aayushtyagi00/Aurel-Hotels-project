@@ -25,11 +25,23 @@ await test('new lock documents retain exists false preconditions',async()=>{awai
 const worker=(await module('worker/index.ts')).default,ctx={props:{}};
 const blocked={PUBLIC_API_LIMITER:{limit:async()=>({success:false})}};
 await test('public rate limit rejects requests before app work with CORS and security policy',async()=>{const r=await worker.fetch(new Request('https://hotel.test/api/rooms',{headers:{Origin:'https://aurel-hotels.web.app','CF-Connecting-IP':'192.0.2.1'}}),blocked,ctx);assert.equal(r.status,429);assert.equal(r.headers.get('Retry-After'),'60');assert.equal(r.headers.get('Access-Control-Allow-Origin'),'https://aurel-hotels.web.app');for(const [key,value]of Object.entries(securityHeaders))assert.equal(r.headers.get(key),value);});
-await test('missing production limiter fails closed',async()=>{const r=await worker.fetch(new Request('https://hotel.test/api/rooms'),{},ctx);assert.equal(r.status,503);});
+await test('durable limiter failure fails closed',async()=>{fetcher=async()=>new Response(null,{status:503});const r=await worker.fetch(new Request('https://hotel.test/api/rooms'),{},ctx);assert.equal(r.status,503);});
 await test('limiter service failure returns a protected service error',async()=>{const r=await worker.fetch(new Request('https://hotel.test/api/rooms'),{PUBLIC_API_LIMITER:{limit:async()=>{throw Error('unavailable');}}},ctx);assert.equal(r.status,503);assert.equal(r.headers.get('X-Frame-Options'),'DENY');});
 await test('booking requests have a separate limiter',async()=>{const r=await worker.fetch(new Request('https://hotel.test/api/reservations',{method:'POST'}),{BOOKING_LIMITER:{limit:async()=>({success:false})}},ctx);assert.equal(r.status,429);});
 await test('preflight is not charged to the public limiter',async()=>{const r=await worker.fetch(new Request('https://hotel.test/api/rooms',{method:'OPTIONS',headers:{Origin:'https://aurel-hotels.web.app'}}),{},ctx);assert.equal(r.status,204);assert.equal(r.headers.get('X-Frame-Options'),'DENY');});
 await test('normal Worker responses receive defensive headers',async()=>{const r=await worker.fetch(new Request('https://hotel.test/'),{},ctx);assert.equal(r.status,200);assert.equal(r.headers.get('X-Content-Type-Options'),'nosniff');});
 await test('Firebase Hosting uses the same defensive header policy',()=>{const config=JSON.parse(fs.readFileSync('firebase.json','utf8'));const policy=Object.fromEntries(config.hosting.headers.find(h=>h.regex).headers.map(h=>[h.key,h.value]));assert.deepEqual(policy,JSON.parse(JSON.stringify(securityHeaders)));});
 await test('Hosting frame policy excludes Firebase-managed auth helper frames',()=>{const config=JSON.parse(fs.readFileSync('firebase.json','utf8')),rule=config.hosting.headers.find(h=>h.regex),pattern=new RegExp(rule.regex);for(const path of ['/','/admin','/account','/auth/action','/assets/main.js'])assert.equal(pattern.test(path),true,path);for(const path of ['/__/auth/iframe','/__/auth/handler','/__/firebase/init.json'])assert.equal(pattern.test(path),false,path);});
+// Native-binding-free hosts use real transport encoding and shared counters.
+const {durableRequestAllowed}=await module('lib/request-rate.ts'),counterDocs=new Map();
+fetcher=async(url,options)=>{
+ if(String(url).includes(':beginTransaction'))return Response.json({transaction:'fixture-transaction'});
+ if(String(url).includes(':commit')){for(const w of JSON.parse(options.body).writes||[])if(w.update)counterDocs.set(w.update.name,w.update.fields);return Response.json({});}
+ if(String(url).includes(':rollback'))return Response.json({});
+ const name=String(url).replace('https://firestore.googleapis.com/v1/','').split('?')[0];
+ return counterDocs.has(name)?Response.json({name,fields:counterDocs.get(name)}):Response.json({error:{status:'NOT_FOUND'}},{status:404});
+};
+await test('durable fallback enforces booking quota and resets its window',async()=>{for(let i=0;i<10;i++)assert.equal(await durableRequestAllowed('booking','192.0.2.10',60000),true);assert.equal(await durableRequestAllowed('booking','192.0.2.10',60000),false);assert.equal(await durableRequestAllowed('booking','192.0.2.10',120000),true);assert.equal(await durableRequestAllowed('booking','192.0.2.11',60000),true);});
+await test('request counters store no raw IP and use native TTL timestamps',()=>{for(const [name,fields]of counterDocs){assert.equal(name.includes('192.0.2.'),false);assert.equal(JSON.stringify(fields).includes('192.0.2.'),false);assert.ok(fields.expiresAt.timestampValue.endsWith('Z'));}});
+await test('public endpoint works through the durable fallback without native bindings',async()=>{const r=await worker.fetch(new Request('https://hotel.test/api/rooms',{headers:{'CF-Connecting-IP':'192.0.2.12'}}),{},ctx);assert.equal(r.status,200);});
 console.log(checks+' security regression checks passed. Firebase and Cloudflare network services are fixtures.');

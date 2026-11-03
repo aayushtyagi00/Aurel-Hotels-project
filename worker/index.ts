@@ -3,6 +3,7 @@ import { runWithConnectorBinding } from "../lib/connector-context";
 import type { ConnectorBinding } from "../lib/connector-contract.mjs";
 import {allowedOrigin} from '../lib/origins';
 import {secureResponse} from '../lib/security';
+import {durableRequestAllowed} from '../lib/request-rate';
 
 const app = {
   async fetch(request: Request, env: Cloudflare.Env, ctx: ExecutionContext<{ CONNECTORS?: ConnectorBinding }>) {
@@ -51,9 +52,10 @@ const worker={
   const bindings=env as Cloudflare.Env & {PUBLIC_API_LIMITER?:Limiter;BOOKING_LIMITER?:Limiter};
   const limiter=path==='/api/rooms'?bindings.PUBLIC_API_LIMITER:bindings.BOOKING_LIMITER;
   try{
-  if(limited&&!limiter&&!import.meta.env.DEV){
-   response=Response.json({error:'Request protection is unavailable. Please retry shortly.'},{status:503,headers:{'Cache-Control':'no-store'}});
-  }else if(limited&&limiter&&!(await limiter.limit({key:request.headers.get('CF-Connecting-IP')||'unknown'})).success){
+  const allowed=!limited||!!import.meta.env.DEV&&!limiter||(limiter
+   ?(await limiter.limit({key:request.headers.get('CF-Connecting-IP')||'unknown'})).success
+   :await durableRequestAllowed(path==='/api/rooms'?'rooms':'booking',request.headers.get('CF-Connecting-IP')||'unknown'));
+  if(!allowed){
    response=Response.json({error:'Too many requests. Please try again shortly.'},{status:429,headers:{'Retry-After':'60','Cache-Control':'no-store'}});
   }else response=await app.fetch(request,env,ctx);
   }catch{response=Response.json({error:'The service could not complete your request. Please retry.'},{status:503,headers:{'Cache-Control':'no-store'}});}

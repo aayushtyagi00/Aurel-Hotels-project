@@ -37,6 +37,7 @@ async function bearer(){
  cachedToken={value:token.access_token,expires:Date.now()+token.expires_in*1000,account:a.client_email};return token.access_token;
 }
 export function encodeValue(value:unknown):Value{
+ if(value instanceof Date)return{timestampValue:value.toISOString()};
  if(value===null)return{nullValue:null};if(typeof value==='string')return{stringValue:value};if(typeof value==='boolean')return{booleanValue:value};
  if(typeof value==='number'&&Number.isFinite(value))return Number.isInteger(value)?{integerValue:String(value)}:{doubleValue:value};
  if(Array.isArray(value))return{arrayValue:{values:value.map(encodeValue)}};
