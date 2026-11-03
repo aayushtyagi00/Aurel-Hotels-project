@@ -17,6 +17,10 @@ const managedLinux = readExecutionProfile() === "managed-linux";
 
 const localBindingConfig = {
   main: "./worker/index.ts",
+  ratelimits: [
+    {name:'PUBLIC_API_LIMITER',namespace_id:'4001',simple:{limit:120,period:60 as const}},
+    {name:'BOOKING_LIMITER',namespace_id:'4002',simple:{limit:10,period:60 as const}},
+  ],
   compatibility_flags: ["nodejs_compat"],
   d1_databases: d1
     ? [

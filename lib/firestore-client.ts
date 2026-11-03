@@ -66,10 +66,10 @@ export async function queryDocuments(collection:string,query:Record<string,unkno
  const rows=await request<{document?:Document}[]>(':runQuery','POST',{structuredQuery:{from:[{collectionId:collection}],...query},...(transaction?{transaction}:{})});
  return rows.filter(r=>r.document).map(r=>({path:r.document!.name.slice(resource().length+1),data:decodeFields(r.document!.fields||{}),updateTime:r.document!.updateTime}));
 }
-export type Write={path:string;data:DocumentData;exists?:boolean;updateTime?:string};
+export type Write={path:string;exists?:boolean;updateTime?:string}&({data:DocumentData;delete?:false}|{delete:true;data?:never});
 export async function commitDocuments(writes:Write[],transaction?:string){
  if(writes.length>400)throw new Error('Split large imports into batches of at most 400.');
- return request(':commit','POST',{writes:writes.map(w=>({update:{name:docName(w.path),fields:encodeFields(w.data)},...(w.updateTime?{currentDocument:{updateTime:w.updateTime}}:w.exists!==undefined?{currentDocument:{exists:w.exists}}:{})})),...(transaction?{transaction}:{})});
+ return request(':commit','POST',{writes:writes.map(w=>({...('delete'in w&&w.delete?{delete:docName(w.path)}:{update:{name:docName(w.path),fields:encodeFields(w.data!)}}),...(w.updateTime?{currentDocument:{updateTime:w.updateTime}}:w.exists!==undefined?{currentDocument:{exists:w.exists}}:{})})),...(transaction?{transaction}:{})});
 }
 export async function runTransaction<T>(work:(transaction:string)=>Promise<{result:T;writes:Write[]}>):Promise<T>{
  for(let attempt=0;attempt<5;attempt++){

@@ -15,7 +15,8 @@
     "build:frontend": "node scripts/build-firebase.mjs",
     "test:hotel": "node --experimental-vm-modules scripts/test-hotel.mjs",
     "test:auth": "node --experimental-vm-modules scripts/test-auth.mjs",
-    "test:search": "node --experimental-vm-modules scripts/test-search.mjs"
+    "test:search": "node --experimental-vm-modules scripts/test-search.mjs",
+    "test:security": "node --experimental-vm-modules scripts/test-security.mjs"
   },
   "dependencies": {
     "firebase": "12.19.0",

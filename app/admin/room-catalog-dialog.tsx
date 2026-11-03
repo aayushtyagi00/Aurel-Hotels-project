@@ -1,4 +1,5 @@
 'use client';
+import {trustedImage} from '../../lib/security';
 import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {X,Save,Trash2} from 'lucide-react';
 import {apiFetch} from '../../lib/api-fetch';
@@ -21,7 +22,7 @@ export default function RoomCatalogDialog({open,room,onClose,onSaved,cities,defa
  <label>Floor<input required type="number" min={0} max={100} value={draft.floor} onChange={e=>field('floor',Number(e.target.value))}/></label>
  <label className="full">Description<textarea required minLength={5} maxLength={600} value={draft.detail} onChange={e=>field('detail',e.target.value)}/></label>
  <label className="full">Features (one per line)<textarea required rows={3} value={draft.features} onChange={e=>field('features',e.target.value)}/></label>
- <label className="full">Room image URL<input required maxLength={2048} placeholder="https://…" value={draft.image} onChange={e=>field('image',e.target.value)}/><small>Use an HTTPS image URL, or one of the existing /images/ files.</small></label>
- {draft.image&&<div className="full catalog-image-preview">{previewError?<p>Image could not load. Check the image URL before saving.</p>:<img src={draft.image} alt="Room image preview" onError={()=>setPreviewError(true)}/>}</div>}
+ <label className="full">Room image path<input required maxLength={2048} placeholder="/images/classic.webp" value={draft.image} onChange={e=>field('image',e.target.value)}/><small>Choose an existing file in the /images/ library.</small></label>
+ {trustedImage(draft.image)&&<div className="full catalog-image-preview">{previewError?<p>Image could not load. Check the image URL before saving.</p>:<img src={draft.image} alt="Room image preview" onError={()=>setPreviewError(true)}/>}</div>}
  </div>}{error&&<div className="error-banner" role="alert">{error}</div>}</div><div className="modal-footer">{room&&!remove&&<button type="button" className="text-button danger-text" disabled={busy} onClick={()=>{setRemove(true);setError('');}}><Trash2 size={16}/>Remove room</button>}<button type="button" className="secondary" disabled={busy} onClick={()=>remove?setRemove(false):onClose()}>{remove?'Keep room':'Cancel'}</button><button className="primary" disabled={busy||(!remove&&previewError)}>{busy?'Saving…':remove?'Remove room':room?'Save room':'Add room'}<Save size={16}/></button></div></form></dialog>;
 }

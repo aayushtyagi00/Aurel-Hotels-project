@@ -2,8 +2,9 @@ import handler from "vinext/server/fetch-handler";
 import { runWithConnectorBinding } from "../lib/connector-context";
 import type { ConnectorBinding } from "../lib/connector-contract.mjs";
 import {allowedOrigin} from '../lib/origins';
+import {secureResponse} from '../lib/security';
 
-const worker = {
+const app = {
   async fetch(request: Request, env: Cloudflare.Env, ctx: ExecutionContext<{ CONNECTORS?: ConnectorBinding }>) {
     const origin=request.headers.get('Origin');
     const cross=origin&&origin!==new URL(request.url).origin;
@@ -39,6 +40,27 @@ const worker = {
     }
     return response;
   },
+};
+
+type Limiter={limit:(options:{key:string})=>Promise<{success:boolean}>};
+const worker={
+ async fetch(request:Request,env:Cloudflare.Env,ctx:ExecutionContext<{CONNECTORS?:ConnectorBinding}>){
+  const path=new URL(request.url).pathname,origin=request.headers.get('Origin');
+  const limited=request.method!=='OPTIONS'&&(path==='/api/rooms'||path==='/api/reservations'&&request.method==='POST');
+  let response:Response;
+  const bindings=env as Cloudflare.Env & {PUBLIC_API_LIMITER?:Limiter;BOOKING_LIMITER?:Limiter};
+  const limiter=path==='/api/rooms'?bindings.PUBLIC_API_LIMITER:bindings.BOOKING_LIMITER;
+  try{
+  if(limited&&!limiter&&!import.meta.env.DEV){
+   response=Response.json({error:'Request protection is unavailable. Please retry shortly.'},{status:503,headers:{'Cache-Control':'no-store'}});
+  }else if(limited&&limiter&&!(await limiter.limit({key:request.headers.get('CF-Connecting-IP')||'unknown'})).success){
+   response=Response.json({error:'Too many requests. Please try again shortly.'},{status:429,headers:{'Retry-After':'60','Cache-Control':'no-store'}});
+  }else response=await app.fetch(request,env,ctx);
+  }catch{response=Response.json({error:'The service could not complete your request. Please retry.'},{status:503,headers:{'Cache-Control':'no-store'}});}
+  const result=secureResponse(response);
+  if(origin&&allowedOrigin(origin)){result.headers.set('Access-Control-Allow-Origin',origin);if(!result.headers.get('Vary')?.includes('Origin'))result.headers.append('Vary','Origin');}
+  return result;
+ }
 };
 
 export default worker;
