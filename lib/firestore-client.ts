@@ -52,20 +52,33 @@ export function decodeValue(v:Value):unknown{
 }
 export function decodeFields(fields:Record<string,Value>):DocumentData{return Object.fromEntries(Object.entries(fields).map(([k,v])=>[k,decodeValue(v)]));}
 function resource(){const c=config();return'projects/'+c.project+'/databases/'+c.database+'/documents';}
+export function documentReference(path:string){return docName(path);}
 function docName(path:string){if(!/^[\w-]+\/[^/]+$/.test(path))throw new Error('Expected a collection/document path.');return resource()+'/'+path;}
 async function request<T>(suffix:string,method='GET',body?:unknown):Promise<T>{
  const response=await fetch('https://firestore.googleapis.com/v1/'+resource()+suffix,{method,headers:{Authorization:'Bearer '+await bearer(),'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(20000)});
  const data=await response.json() as T & {error?:{status?:string}};if(!response.ok)throw new FirestoreError(response.status,data.error?.status||'UNKNOWN');return data;
 }
-export async function getDocument(path:string,transaction?:string){
- docName(path);const encodedPath=path.split('/').map(encodeURIComponent).join('/');try{const d=await request<Document>('/'+encodedPath+(transaction?'?transaction='+encodeURIComponent(transaction):''));return{data:decodeFields(d.fields||{}),updateTime:d.updateTime};}catch(e){if(e instanceof FirestoreError&&e.status===404)return null;throw e;}
+export async function getDocument(path:string,transaction?:string,readTime?:string){
+ docName(path);const encodedPath=path.split('/').map(encodeURIComponent).join('/');try{const d=await request<Document>('/'+encodedPath+(transaction?'?transaction='+encodeURIComponent(transaction):readTime?'?readTime='+encodeURIComponent(readTime):''));return{data:decodeFields(d.fields||{}),updateTime:d.updateTime};}catch(e){if(e instanceof FirestoreError&&e.status===404)return null;throw e;}
 }
 // Structured queries are used here because these reads participate in native
 // read-write transactions; no Firestore queries or aggregation run in a browser.
 export async function queryDocuments(collection:string,query:Record<string,unknown>={},transaction?:string){
+ return (await queryDocumentPage(collection,query,transaction)).rows;
+}
+export async function queryDocumentPage(collection:string,query:Record<string,unknown>={},transaction?:string,readTime?:string){
  if(!/^[\w-]+$/.test(collection))throw new Error('Invalid collection.');
- const rows=await request<{document?:Document}[]>(':runQuery','POST',{structuredQuery:{from:[{collectionId:collection}],...query},...(transaction?{transaction}:{})});
- return rows.filter(r=>r.document).map(r=>({path:r.document!.name.slice(resource().length+1),data:decodeFields(r.document!.fields||{}),updateTime:r.document!.updateTime}));
+ const rows=await request<{document?:Document;readTime?:string}[]>(':runQuery','POST',{structuredQuery:{from:[{collectionId:collection}],...query},...(transaction?{transaction}:readTime?{readTime}:{})});
+ return {rows:rows.filter(r=>r.document).map(r=>({path:r.document!.name.slice(resource().length+1),data:decodeFields(r.document!.fields||{}),updateTime:r.document!.updateTime})),readTime:readTime||rows.filter(r=>r.readTime).at(-1)?.readTime};
+}
+export async function aggregateDocuments(collection:string,query:Record<string,unknown>,sums:string[]=[],readTime?:string){
+ if(!/^[\w-]+$/.test(collection))throw new Error('Invalid collection.');
+ const rows=await request<{result?:{aggregateFields?:Record<string,Value>}}[]>(':runAggregationQuery','POST',{
+  structuredAggregationQuery:{structuredQuery:{from:[{collectionId:collection}],...query},aggregations:[
+   {alias:'count',count:{}},...sums.map(field=>({alias:field,sum:{field:{fieldPath:field}}}))
+  ]},...(readTime?{readTime}:{})
+ });
+ const fields=rows.find(r=>r.result)?.result?.aggregateFields;if(!fields)throw new Error('Missing Firestore aggregate result.');return decodeFields(fields);
 }
 export type Write={path:string;exists?:boolean;updateTime?:string}&({data:DocumentData;delete?:false}|{delete:true;data?:never});
 export async function commitDocuments(writes:Write[],transaction?:string){

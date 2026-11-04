@@ -50,4 +50,17 @@ await test('parallel requests keep Firebase identities isolated',async()=>{const
 await test('platform identity headers cannot impersonate a Firebase user',async()=>{const user=await authContext.runWithHotelRequest(new Request('https://hotel.test/api/session',{headers:{'oai-authenticated-user-email':'owner@example.test'}}),()=>authContext.getHotelUser());assert.equal(user,null);});
 await test('unknown routes and unsupported methods never reach the API',async()=>{assert.equal((await worker.fetch(new Request('https://hotel.test/unknown'),{})).status,404);const r=await worker.fetch(new Request('https://hotel.test/api/rooms',{method:'DELETE'}),{});assert.equal(r.status,405);assert.equal(r.headers.get('Allow'),'GET');});
 await test('read-only mode prevents mutations in the standalone Worker',async()=>{const r=await worker.fetch(new Request('https://hotel.test/api/admin/rooms',{method:'PUT'}),{HOTEL_READ_ONLY:'true'});assert.equal(r.status,503);});
+const transport=await module('lib/firestore-client.ts');
+await test('history transport sends snapshot cursors and native unbounded SUM',async()=>{
+ const calls=[],readTime='2026-11-04T00:00:00.123456Z';fetcher=async(url,options)=>{const body=JSON.parse(options.body);calls.push({url,body});return Response.json(String(url).includes('runAggregationQuery')?[{result:{aggregateFields:{count:{integerValue:'6001'},amount:{integerValue:'5000'}}}}]:[{readTime,document:{name:'projects/aurel-hotels/databases/aurel-hotel/documents/reservations/one',fields:{id:{stringValue:'one'}}}}]);};
+ const startAt={values:[{stringValue:'2025-01-01'},{referenceValue:transport.documentReference('reservations/last')}],before:false};
+ const page=await transport.queryDocumentPage('reservations',{limit:26,startAt},undefined,readTime);
+ assert.equal(page.rows[0].data.id,'one');assert.equal(page.readTime,readTime);assert.equal(calls[0].body.readTime,readTime);assert.equal(calls[0].body.structuredQuery.startAt.before,false);
+ const sum=await transport.aggregateDocuments('payments',{where:{fieldFilter:{field:{fieldPath:'bookingId'},op:'EQUAL',value:{stringValue:'one'}}}},['amount'],readTime);
+ assert.equal(sum.amount,5000);assert.equal(sum.count,6001);assert.equal(calls[1].body.readTime,readTime);assert.equal(calls[1].body.structuredAggregationQuery.structuredQuery.limit,undefined);assert.equal(calls[1].body.structuredAggregationQuery.aggregations[1].sum.field.fieldPath,'amount');
+});
+await test('report route is available and CSV continuation headers are browser-readable',async()=>{
+ const response=await worker.fetch(new Request('https://hotel.test/api/admin/reports/summary',{headers:{Origin:'https://aurel-hotels.web.app'}}),{});
+ assert.equal(response.status,200);assert.equal(response.headers.get('Access-Control-Expose-Headers'),'X-Next-Cursor');
+});
 console.log(checks+' security regression checks passed. Firebase and Cloudflare network services are fixtures.');

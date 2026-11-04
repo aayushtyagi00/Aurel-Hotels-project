@@ -1,11 +1,13 @@
+import {queryDocuments} from './firestore-client';
+import {adminHistory} from './admin-history';
 import {z} from 'zod';
-import {csvCell,trustedImage,safeImage} from './security';
+import {trustedImage,safeImage} from './security';
 import {categoryId,publicAvailability,roomAvailable} from './availability';
 import {requireAccess,json,failure,readBody,HttpError,OWNER_EMAIL} from './access';
 import {can,roles,type Permission,type Role} from './permissions';
 import {staffScope,inCity,scopesOverlap,cityKey} from './city-access';
-import {today,nights} from './hotel';
-import {readHotel,readInventory,mutateHotel,hotelRooms,recordActivity,fieldFilter,activeReservations,inventoryCityFilters,type ReadPlan,type HotelData} from './firestore-hotel';
+import {today,addDays,nights} from './hotel';
+import {readHotel,readInventory,mutateHotel,hotelRooms,recordActivity,fieldFilter,inventoryCityFilters,type ReadPlan,type HotelData} from './firestore-hotel';
 // Schemas validate all browser input; this internal row type spans six existing
 // domain collections imported from D1, whose optional fields differ by entity.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Legacy Firestore collections have heterogeneous fields; boundary schemas validate writes.
@@ -41,27 +43,20 @@ export async function firestoreApi(req:Request,resource:string){try{
   const city=z.string().trim().min(2).max(80).parse(url.searchParams.get('city')||'Delhi'),adults=z.coerce.number().int().min(1).max(8).parse(url.searchParams.get('adults')||2),children=z.coerce.number().int().min(0).max(7).parse(url.searchParams.get('children')||0);if(adults+children>8)fail(400,'A room supports up to 8 guests.');
   const d=await readInventory(start,end,city),rooms=hotelRooms(d);return json({rooms:publicAvailability(rooms,d.reservations,start,end,city,adults,children),cities:[...new Set(rooms.map(r=>r.city))].sort()});
  }
- const permissions:Record<string,Permission>={catalog:'rooms.write',staff:'staff.write',roomstate:'rooms.read',tasks:'tasks.read',payments:'payments.read',activity:'audit.read',export:'bookings.read'};
+ const permissions:Record<string,Permission>={catalog:'rooms.write',staff:'staff.write',roomstate:'rooms.read',tasks:'tasks.read',payments:'payments.read',activity:'audit.read',export:'bookings.read',report:'bookings.read'};
  const user=await requireAccess(resource==='reservations'?undefined:permissions[resource]);
- if(resource==='export'&&method==='GET'){
-  // Export only a fresh server-authorized snapshot; commit the audit record
-  // before releasing any CSV bytes. Downloaded files remain sensitive.
-  const csv=await mutateHotel(data=>{
-   const s=data as State;demand(s,user.email,'bookings.read');const role=currentRole(s,user.email);
-   if(!['owner','manager'].includes(role||''))fail(403,'Only management can export guest reports.');
-   const city=url.searchParams.get('city'),scope=currentScope(s,user.email),status=url.searchParams.get('status')||'all',search=(url.searchParams.get('q')||'').slice(0,254).toLowerCase();
-   if(city&&city!=='all'&&!inCity(scope,city))fail(403,'Your staff access does not include this city.');
-   const rows=sorted(s.reservations.filter(r=>inCity(scope,bookingCity(s,r))&&(!city||city==='all'||cityKey(bookingCity(s,r))===cityKey(city))&&(status==='all'||r.status===status)&&(r.guest+' '+r.email+' '+r.room+' '+r.id).toLowerCase().includes(search)));
-   recordActivity(data,user.email,'reservations.exported','reservations',String(rows.length)+' rows',city&&city!=='all'?city:null);
-   const lines=[['Booking','Guest','Email','Room','Arrival','Departure','Status','Booked INR','Paid INR'],...rows.map(r=>[r.id,r.guest,r.email,r.room,r.checkIn,r.checkOut,r.status,r.total,net(s,r.id)])];
-   return lines.map(row=>row.map(csvCell).join(',')).join('\r\n');
-  },{reservations:{},payments:{},staff_access:{},room_state:{}});
-  return new Response(csv,{headers:{'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="aurel-reservations.csv"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
- }
+ if(method==='GET'&&(resource==='export'||resource==='report'||resource==='payments'||resource==='reservations'&&url.searchParams.get('scope')==='hotel'&&url.searchParams.get('mode')!=='operations'))return await adminHistory(req,resource as 'reservations'|'payments'|'report'|'export');
  if(method==='GET'){
-  const plans:Record<string,ReadPlan>={reservations:{reservations:{},room_state:{},staff_access:{}},roomstate:{reservations:activeReservations,room_state:{},staff_access:{}},staff:{staff_access:{},room_state:{}},tasks:{hotel_tasks:{},staff_access:{},room_state:{}},payments:{payments:{},reservations:{},room_state:{},staff_access:{}},activity:{activity:{orderBy:[{field:{fieldPath:'created_at'},direction:'DESCENDING'}],limit:200},reservations:{},room_state:{},staff_access:{}}};
+  // Expired confirmations are history, not current room/calendar dependencies.
+  // Keep overdue checked-in stays so the desk can still resolve departures.
+  const operational=(start:string,end:string)=>({where:{compositeFilter:{op:'OR',filters:[fieldFilter('status','checked-in'),{compositeFilter:{op:'AND',filters:[fieldFilter('status','confirmed'),fieldFilter('checkOut',start,'GREATER_THAN'),fieldFilter('checkIn',end,'LESS_THAN')]}}]}}});
+  const plans:Record<string,ReadPlan>={reservations:{reservations:operational(today(),addDays(today(),14)),room_state:{},staff_access:{}},roomstate:{reservations:operational(url.searchParams.get('start')||today(),url.searchParams.get('end')||addDays(today(),1)),room_state:{},staff_access:{}},staff:{staff_access:{},room_state:{}},tasks:{hotel_tasks:{},staff_access:{},room_state:{}},activity:{activity:{orderBy:[{field:{fieldPath:'created_at'},direction:'DESCENDING'}],limit:200},room_state:{},staff_access:{}}};
   if(resource==='reservations'&&url.searchParams.get('scope')!=='hotel')plans.reservations.reservations={where:{compositeFilter:{op:'OR',filters:[fieldFilter('owner',user.userId),fieldFilter('email',user.email)]}}};
   const d=await readHotel(undefined,plans[resource]||{}),s=d as State,role=currentRole(s,user.email),scope=currentScope(s,user.email),requested=url.searchParams.get('city');
+  if(resource==='activity'){
+   const ids=[...new Set(s.activity.filter(a=>!a.city).map(a=>String(a.entity)))];
+   for(let i=0;i<ids.length;i+=30){const found=await queryDocuments('reservations',{where:fieldFilter('id',{arrayValue:{values:ids.slice(i,i+30).map(stringValue=>({stringValue}))}},'IN'),limit:30});s.reservations.push(...found.map(r=>r.data));}
+  }
   const permission=resource==='reservations'?(url.searchParams.get('scope')==='hotel'?'bookings.read':undefined):permissions[resource];
   if(permission&&!can(role,permission))fail(403,'Your role no longer has access to this action.');
   const city=requested&&requested!=='all'?requested:null;
@@ -72,7 +67,6 @@ export async function firestoreApi(req:Request,resource:string){try{
   if(resource==='roomstate')return json({rooms:hotelRooms(d).filter(r=>visible(r.city)).map(r=>({...r,available:roomAvailable(r,s.reservations,url.searchParams.get('start')||today(),url.searchParams.get('end')||today()),occupied:s.reservations.some(b=>b.room===r.id&&b.status==='checked-in')})),cities});
   if(resource==='staff')return json({staff:sorted(s.staff_access.filter(r=>!city||inCity(staffScope(r.role,r.cities),city)),'name').map(r=>({...r,cities:staffScope(r.role,r.cities)})),cities});
   if(resource==='tasks')return json({tasks:sorted(s.hotel_tasks.filter(t=>visible(t.city||roomCity(s,t.room))&&(!['housekeeping','maintenance'].includes(role||'')||t.kind===role))),staff:s.staff_access.filter(r=>r.active&&scopesOverlap(scope,staffScope(r.role,r.cities))&&(!city||inCity(staffScope(r.role,r.cities),city))).filter(r=>!['housekeeping','maintenance'].includes(role||'')||r.role===role).map(({email,name,role,cities})=>({email,name,role,cities:staffScope(role,cities)})),cities});
-  if(resource==='payments')return json({payments:sorted(s.payments.filter(p=>{const b=s.reservations.find(r=>r.id===p.bookingId);return b&&visible(bookingCity(s,b));})).map(p=>role==='viewer'?{...p,reference:'',actor:''}:p),cities});
   if(resource==='activity')return json({activity:sorted(s.activity.filter(a=>{const c=activityCity(s,a);return c?visible(c):scope===null&&!city;}),'created_at').slice(0,200),cities});
  }
  const raw=await readBody(req),now=new Date().toISOString();

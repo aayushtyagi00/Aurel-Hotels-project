@@ -1,10 +1,14 @@
 import fs from 'node:fs';import {createHash} from 'node:crypto';import path from 'node:path';import vm from 'node:vm';import assert from 'node:assert/strict';import ts from 'typescript';import {z} from 'zod';
 // Isolated API tests. Authentication and Firestore transport are test fixtures;
 // all validation, role checks, room allocation and lifecycle logic are real source.
-let email='owner@example.test',checks=0;const docs=new Map(),context=vm.createContext({console,crypto:globalThis.crypto,Date,URL,URLSearchParams,Headers,Request,Response,structuredClone}),cache=new Map();
-const env={HOTEL_OWNER_EMAIL:'owner@example.test'};let queue=Promise.resolve();
+let email='owner@example.test',checks=0;const docs=new Map(),context=vm.createContext({console,crypto:globalThis.crypto,Date,TextEncoder,TextDecoder,Uint8Array,btoa,atob,URL,URLSearchParams,Headers,Request,Response,structuredClone}),cache=new Map();
+const env={HOTEL_OWNER_EMAIL:'owner@example.test',HOTEL_HISTORY_CURSOR_SECRET:'isolated-test-key-not-a-real-credential'};let queue=Promise.resolve();
 function matches(row,filter){if(filter.compositeFilter){const {op,filters}=filter.compositeFilter;return op==='OR'?filters.some(f=>matches(row,f)):filters.every(f=>matches(row,f));}const {field,op,value}=filter.fieldFilter,actual=row[field.fieldPath],expected=value.stringValue??value.arrayValue?.values.map(v=>v.stringValue);return op==='IN'?expected.includes(actual):op==='GREATER_THAN'?actual>expected:op==='LESS_THAN'?actual<expected:actual===expected;}
-const transport={getDocument:async p=>docs.has(p)?{data:structuredClone(docs.get(p))}:null,queryDocuments:async(c,q={})=>{let rows=[...docs].filter(([p,d])=>p.startsWith(c+'/')&&(!q.where||matches(d,q.where)));for(const order of [...(q.orderBy||[])].reverse())rows.sort((a,b)=>String(a[1][order.field.fieldPath]||'').localeCompare(String(b[1][order.field.fieldPath]||''))*(order.direction==='DESCENDING'?-1:1));return rows.slice(0,q.limit||rows.length).map(([path,data])=>({path,data:structuredClone(data)}));},runTransaction:work=>{const operation=queue.then(async()=>{const {result,writes}=await work('isolated-test-transaction');for(const w of writes){if(w.delete)docs.delete(w.path);else docs.set(w.path,structuredClone(w.data));}return result;});queue=operation.catch(()=>{});return operation;}};
+const transport={documentReference:p=>'projects/test/databases/test/documents/'+p,aggregateDocuments:async(c,q={},sums=[])=>{const rows=[...docs].filter(([p,d])=>p.startsWith(c+'/')&&(!q.where||matches(d,q.where))).map(([,d])=>d);return{count:rows.length,...Object.fromEntries(sums.map(field=>[field,rows.reduce((n,r)=>n+Number(r[field]||0),0)]))};},getDocument:async p=>docs.has(p)?{data:structuredClone(docs.get(p))}:null,queryDocuments:async(c,q={})=>{let rows=[...docs].filter(([p,d])=>p.startsWith(c+'/')&&(!q.where||matches(d,q.where)));const value=(entry,field)=>field==='__name__'?entry[0]:String(entry[1][field]||'');
+const orders=q.orderBy||[];rows.sort((a,b)=>{for(const order of orders){const cmp=value(a,order.field.fieldPath).localeCompare(value(b,order.field.fieldPath))*(order.direction==='DESCENDING'?-1:1);if(cmp)return cmp;}return 0;});
+if(q.startAt){const cursor=q.startAt.values;rows=rows.filter(row=>{for(let i=0;i<orders.length;i++){const expected=cursor[i].stringValue??cursor[i].referenceValue.split('/documents/')[1],cmp=value(row,orders[i].field.fieldPath).localeCompare(expected)*(orders[i].direction==='DESCENDING'?-1:1);if(cmp)return cmp>0;}return false;});}
+return rows.slice(0,q.limit||rows.length).map(([path,data])=>({path,data:structuredClone(data)}));},runTransaction:work=>{const operation=queue.then(async()=>{const {result,writes}=await work('isolated-test-transaction');for(const w of writes){if(w.delete)docs.delete(w.path);else docs.set(w.path,structuredClone(w.data));}return result;});queue=operation.catch(()=>{});return operation;}};
+transport.queryDocumentPage=async(c,q,_transaction,readTime)=>({rows:await transport.queryDocuments(c,q),readTime:readTime||new Date().toISOString()});
 function synthetic(values){return new vm.SyntheticModule(Object.keys(values),function(){for(const [k,v]of Object.entries(values))this.setExport(k,v);},{context});}
 async function load(file){file=path.resolve(file);if(cache.has(file))return cache.get(file);let m;if(file.endsWith(path.join('lib','auth.ts')))m=synthetic({getHotelUser:async()=>email?{userId:'uid-'+email,email,fullName:'Test guest'}:null});else if(file.endsWith(path.join('lib','firestore-client.ts')))m=synthetic(transport);else m=new vm.SourceTextModule(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText,{context,identifier:file});cache.set(file,m);await m.link(async(spec,ref)=>{if(spec==='zod'){const s=synthetic({z});await s.link(()=>{});return s;}if(spec==='cloudflare:workers'){const s=synthetic({env});await s.link(()=>{});return s;}return load(path.resolve(path.dirname(ref.identifier),spec+'.ts'));});return m;}
 const h=await load('lib/hotel.ts');await h.evaluate();const m=await load('lib/firestore-api.ts');await m.evaluate();const api=m.namespace.firestoreApi;const {today,addDays}=h.namespace,day=today();
@@ -121,4 +125,65 @@ equal('management CSV export succeeds',csv.status,200);
 equal('CSV export is not cached',csv.headers.get('Cache-Control'),'no-store');
 equal('CSV formula with leading whitespace is neutralized',(await csv.text()).includes('"\'  \t=HYPERLINK'),true);
 equal('CSV response has a committed audit record',[...docs.values()].filter(r=>r.action==='reservations.exported').length,auditBefore+1);
+// Full history must remain correct beyond both the old row limit and one page.
+for(const key of [...docs.keys()])if(key.startsWith('reservations/')||key.startsWith('payments/'))docs.delete(key);
+const expected={Delhi:{count:0,cancelled:0,booked:0},Mumbai:{count:0,cancelled:0,booked:0}};
+for(let i=0;i<5205;i++){
+ const city=i%3?'Delhi':'Mumbai',id='history-'+String(i).padStart(5,'0'),status=i%5?'checked-out':'cancelled';
+ expected[city].count++;if(status==='cancelled')expected[city].cancelled++;else expected[city].booked+=100;
+ docs.set('reservations/'+id,{id,guest:'History Guest '+i,email:'history'+i+'@example.test',phone:'private',notes:'private',owner:'private',city,room:city==='Delhi'?'101':'102',status,total:100,checkIn:day,checkOut:addDays(day,1),createdAt:i%2?'2024-01-01T00:00:00.000Z':'2025-01-01T00:00:00.000Z'});
+}
+// Imported rows may lack city; resolution must use the room just as before.
+docs.get('reservations/history-00001').city=undefined;
+for(let i=0;i<6001;i++)docs.set('payments/ledger-'+String(i).padStart(5,'0'),{id:'ledger-'+String(i).padStart(5,'0'),bookingId:'history-00001',amount:i===6000?-1000:1,reference:'private',actor:'private',createdAt:'2025-01-01T00:00:00.000Z'});
+docs.set('payments/mumbai',{id:'mumbai',bookingId:'history-00000',amount:17,createdAt:'2025-01-01T00:00:00.000Z'});
+let cursor=null,ids=[],seenCursors=new Set(),historyPaid;do{
+ const result=await call('reservations','GET',null,'owner@example.test','?scope=hotel'+(cursor?'&cursor='+encodeURIComponent(cursor):''));assert.equal(result.status,200);assert.ok(result.data.reservations.length<=25);
+ if('history-00001'in result.data.paid)historyPaid=result.data.paid['history-00001'];ids.push(...result.data.reservations.map(r=>r.id));cursor=result.data.nextCursor;if(cursor){assert.ok(!seenCursors.has(cursor));seenCursors.add(cursor);}
+}while(cursor);
+equal('all 5205 reservations traversed without truncation',ids.length,5205);
+equal('timestamp ties never duplicate reservations',new Set(ids).size,5205);
+const summaryModule=await load('lib/history-summary.ts');await summaryModule.evaluate();
+let report=summaryModule.namespace.emptySummary();cursor=null;do{
+ const result=await call('report','GET',null,delhiManager,'?city=Delhi'+(cursor?'&cursor='+encodeURIComponent(cursor):''));assert.equal(result.status,200);report=summaryModule.namespace.mergeSummary(report,result.data.summary);cursor=result.data.nextCursor;
+}while(cursor);
+equal('scoped report counts all matching history',report.reservations,expected.Delhi.count);
+equal('scoped report cancellation aggregation is complete',report.cancelled,expected.Delhi.cancelled);
+equal('scoped booked revenue includes full history',report.booked,expected.Delhi.booked);
+equal('native SUM includes over 5000 payments and refunds without downloading ledger',report.collected,5000);
+equal('scoped outstanding uses full aggregates',report.outstanding,expected.Delhi.booked-5000);
+const first=await call('reservations','GET',null,delhiManager,'?scope=hotel&city=Delhi');
+equal('history page paid totals do not use a partial payment page',historyPaid,5000);
+const pageCursor=first.data.nextCursor;
+await status('payment cursor cannot be reused on reservations','payments','GET',null,400,manager,'?cursor='+encodeURIComponent(pageCursor));
+await status('malformed history cursor rejected','reservations','GET',null,400,manager,'?scope=hotel&cursor=garbage');
+await status('report rejects unauthorized city','report','GET',null,403,delhiManager,'?city=Mumbai');
+await status('guest cannot access aggregate report','report','GET',null,403,guest);
+const visiblePage=await call('reservations','GET',null,viewer,'?scope=hotel');
+equal('paginated viewer rows still redact contact and ownership',visiblePage.data.reservations.every(r=>!r.email&&!r.phone&&!r.notes&&!('owner'in r)),true);
+docs.get('staff_access/'+encodeURIComponent(delhiManager)).active=0;
+await status('revocation between pages blocks continuation','reservations','GET',null,403,delhiManager,'?scope=hotel&cursor='+encodeURIComponent(pageCursor));
+docs.get('staff_access/'+encodeURIComponent(delhiManager)).active=1;
+let ledgerIds=[];cursor=null;do{const result=await call('payments','GET',null,delhiManager,cursor?'?cursor='+encodeURIComponent(cursor):'');assert.equal(result.status,200);assert.ok(result.data.payments.length<=25);ledgerIds.push(...result.data.payments.map(p=>p.id));cursor=result.data.nextCursor;}while(cursor);
+equal('ledger pages traverse over 5000 legacy payments within city scope',ledgerIds.length,6001);
+equal('ledger cursor ties do not duplicate entries',new Set(ledgerIds).size,6001);
+const cursors=await load('lib/history-cursor.ts');await cursors.evaluate();
+const expired=await cursors.namespace.sealHistoryCursor({at:'2025',snapshot:'2020-01-01T00:00:00Z',path:'reservations/history-00000'},JSON.stringify(['reservations','uid-'+manager,manager,'manager',null,'all','all','']));
+await status('expired snapshot asks client to restart','reservations','GET',null,400,manager,'?scope=hotel&cursor='+encodeURIComponent(expired));
+await status('cursor is bound to original city filter','reservations','GET',null,400,delhiManager,'?scope=hotel&cursor='+encodeURIComponent(pageCursor));
+await status('cursor is bound to original identity','reservations','GET',null,400,manager,'?scope=hotel&city=Delhi&cursor='+encodeURIComponent(pageCursor));
+await status('tampering with encrypted cursor is rejected','reservations','GET',null,400,delhiManager,'?scope=hotel&city=Delhi&cursor='+encodeURIComponent((pageCursor[0]==='A'?'B':'A')+pageCursor.slice(1)));
+equal('cursor does not disclose scanned booking identifiers',pageCursor.includes('history-'),false);
+const privateSearch=await call('reservations','GET',null,viewer,'?scope=hotel&q='+encodeURIComponent('history5004@example.test'));
+equal('viewer cannot probe redacted email through search',privateSearch.data.reservations.length,0);
+const ledger=await call('payments','GET',null,viewer);
+equal('paginated viewer ledger redacts payment secrets',ledger.data.payments.every(p=>!p.actor&&!p.reference&&!p.guest.includes('History')),true);
+let csvRows=0;cursor=null;do{
+ email=delhiManager;const response=await api(new Request('https://hotel.test/api/admin/reports/reservations.csv?city=Delhi'+(cursor?'&cursor='+encodeURIComponent(cursor):'')),'export');assert.equal(response.status,200);const text=await response.text();csvRows+=text?text.split('\r\n').length-(cursor?0:1):0;cursor=response.headers.get('X-Next-Cursor');
+}while(cursor);
+equal('CSV walks all authorized history without the 5000 limit',csvRows,expected.Delhi.count);
+for(const [path,row]of docs)if(path.startsWith('reservations/'))Object.assign(row,{status:'confirmed',checkIn:'2020-01-01',checkOut:'2020-01-02'});
+await status('room readiness ignores over 5000 expired confirmations','roomstate','GET',null,200);
+const operationalPage=await call('reservations','GET',null,'owner@example.test','?scope=hotel&mode=operations');
+equal('operational calendar does not load expired history',operationalPage.data.reservations.length,0);
 console.log(checks+' isolated hotel API checks passed. No live data or credentials used.');

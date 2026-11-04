@@ -16,6 +16,7 @@ const routes:Record<string,{resource:string;methods:string[]}>= {
  '/api/admin/tasks':{resource:'tasks',methods:['GET','POST']},
  '/api/admin/payments':{resource:'payments',methods:['GET','POST']},
  '/api/admin/activity':{resource:'activity',methods:['GET']},
+ '/api/admin/reports/summary':{resource:'report',methods:['GET']},
  '/api/admin/reports/reservations.csv':{resource:'export',methods:['GET']},
 };
 const noStore={'Cache-Control':'no-store'};
@@ -23,7 +24,7 @@ async function handle(request:Request,env:Env){
  const path=new URL(request.url).pathname,origin=request.headers.get('Origin');
  if(request.method==='OPTIONS'){
   if(!origin||!allowedOrigin(origin))return new Response(null,{status:403});
-  return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':origin,'Access-Control-Allow-Methods':'GET,POST,PUT,PATCH,DELETE,OPTIONS','Access-Control-Allow-Headers':'Authorization,Content-Type','Access-Control-Max-Age':'600','Vary':'Origin'}});
+  return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':origin,'Access-Control-Allow-Methods':'GET,POST,PUT,PATCH,DELETE,OPTIONS','Access-Control-Allow-Headers':'Authorization,Content-Type','Access-Control-Max-Age':'600','Access-Control-Expose-Headers':'X-Next-Cursor','Vary':'Origin'}});
  }
  if(path==='/')return Response.redirect('https://aurel-hotels.web.app/',302);
  if(path==='/api/health'&&request.method==='GET'){
@@ -49,7 +50,7 @@ const worker={
   let response:Response;
   try{response=await handle(request,env);}catch{response=Response.json({error:'The service could not complete your request. Please retry.'},{status:503,headers:noStore});}
   const result=secureResponse(response),origin=request.headers.get('Origin');
-  if(origin&&allowedOrigin(origin)){result.headers.set('Access-Control-Allow-Origin',origin);if(!result.headers.get('Vary')?.includes('Origin'))result.headers.append('Vary','Origin');}
+  if(origin&&allowedOrigin(origin)){result.headers.set('Access-Control-Allow-Origin',origin);result.headers.set('Access-Control-Expose-Headers','X-Next-Cursor');if(!result.headers.get('Vary')?.includes('Origin'))result.headers.append('Vary','Origin');}
   return result;
  }
 };
